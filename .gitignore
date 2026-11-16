@@ -1,0 +1,15 @@
+# Godot
+.godot/
+.import/
+export_presets.cfg.bak
+*.translation
+# Builds
+builds/
+*.apk
+*.aab
+*.ipa
+# OS / editors
+.DS_Store
+.vscode/
+__pycache__/
+*.pyc
