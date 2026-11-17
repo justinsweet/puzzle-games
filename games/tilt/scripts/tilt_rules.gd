@@ -3,6 +3,7 @@ extends RefCounted
 ##
 ## A marble is a Dictionary {"pos": Vector2i, "color": String}.
 ## Holes are a Dictionary Vector2i -> color String (open holes only).
+## Portals are a Dictionary Vector2i -> Vector2i (each pad -> its linked pad).
 
 const DIRS := {
 	"U": Vector2i(0, -1),
@@ -17,6 +18,7 @@ static func parse(rows: Array) -> Dictionary:
 	var walls := {}
 	var holes := {}
 	var marbles := []
+	var pads := {}
 	for y in rows.size():
 		var row: String = rows[y]
 		for x in row.length():
@@ -27,25 +29,48 @@ static func parse(rows: Array) -> Dictionary:
 				marbles.append({"pos": Vector2i(x, y), "color": c})
 			elif c >= "A" and c <= "Z":
 				holes[Vector2i(x, y)] = c.to_lower()
+			elif c >= "0" and c <= "9":
+				if not pads.has(c):
+					pads[c] = []
+				pads[c].append(Vector2i(x, y))
+	var portals := {}
+	var portal_ids := {}
+	for id in pads:
+		var cells: Array = pads[id]
+		if cells.size() == 2:
+			portals[cells[0]] = cells[1]
+			portals[cells[1]] = cells[0]
+			portal_ids[cells[0]] = id
+			portal_ids[cells[1]] = id
 	return {
 		"w": (rows[0] as String).length(),
 		"h": rows.size(),
 		"walls": walls,
 		"holes": holes,
 		"marbles": marbles,
+		"portals": portals,
+		"portal_ids": portal_ids,
 	}
 
 
 ## Applies one swipe. Returns {"marbles": [...], "holes": {...}} where each result
-## marble (same order as the input) has "pos", "color", "from" and "dropped".
-static func slide(w: int, h: int, walls: Dictionary, marbles: Array, holes: Dictionary, dir: String) -> Dictionary:
+## marble (same order as the input) has "pos", "color", "from", "dropped" and
+## "path" (the cells it passed through, with a teleport marked by a gap).
+static func slide(w: int, h: int, walls: Dictionary, portals: Dictionary, marbles: Array, holes: Dictionary, dir: String) -> Dictionary:
 	var d: Vector2i = DIRS[dir]
 	var order: Array = range(marbles.size())
 	# Leading edge first: the marble furthest along the swipe direction moves first.
+	# Ties go to the smaller x, then the smaller y (same as the Python generator).
 	order.sort_custom(func(a, b):
 		var pa: Vector2i = marbles[a]["pos"]
 		var pb: Vector2i = marbles[b]["pos"]
-		return pa.x * d.x + pa.y * d.y > pb.x * d.x + pb.y * d.y)
+		var la := pa.x * d.x + pa.y * d.y
+		var lb := pb.x * d.x + pb.y * d.y
+		if la != lb:
+			return la > lb
+		if pa.x != pb.x:
+			return pa.x < pb.x
+		return pa.y < pb.y)
 	var occupied := {}
 	for m in marbles:
 		occupied[m["pos"]] = true
@@ -57,24 +82,35 @@ static func slide(w: int, h: int, walls: Dictionary, marbles: Array, holes: Dict
 		var p: Vector2i = m["pos"]
 		occupied.erase(p)
 		var dropped := false
+		var used := {}
+		var path := [p]
 		while true:
 			var n := p + d
 			if n.x < 0 or n.y < 0 or n.x >= w or n.y >= h or walls.has(n) or occupied.has(n):
 				break
-			p = n
+			if portals.has(n):
+				if used.has(n) or occupied.has(portals[n]):
+					break
+				used[n] = true
+				path.append(n)
+				path.append(null)  # teleport: jump to the linked pad
+				p = portals[n]
+			else:
+				p = n
+			path.append(p)
 			if open_holes.get(p, "") == m["color"]:
 				open_holes.erase(p)
 				dropped = true
 				break
 		if not dropped:
 			occupied[p] = true
-		result[i] = {"pos": p, "color": m["color"], "from": m["pos"], "dropped": dropped}
+		result[i] = {"pos": p, "color": m["color"], "from": m["pos"], "dropped": dropped, "path": path}
 	return {"marbles": result, "holes": open_holes}
 
 
 ## Fewest-moves solution from this position, as an Array of "U"/"D"/"L"/"R".
 ## Returns an empty Array if already solved or if no solution is found.
-static func solve(w: int, h: int, walls: Dictionary, marbles: Array, holes: Dictionary, max_states: int = 100000) -> Array:
+static func solve(w: int, h: int, walls: Dictionary, portals: Dictionary, marbles: Array, holes: Dictionary, max_states: int = 100000) -> Array:
 	if marbles.is_empty():
 		return []
 	var start_key := state_key(marbles, holes)
@@ -85,7 +121,7 @@ static func solve(w: int, h: int, walls: Dictionary, marbles: Array, holes: Dict
 		var s: Dictionary = queue[head]
 		head += 1
 		for dir in ["U", "L", "D", "R"]:
-			var r := slide(w, h, walls, s["m"], s["h"], dir)
+			var r := slide(w, h, walls, portals, s["m"], s["h"], dir)
 			var alive := []
 			for m in r["marbles"]:
 				if not m["dropped"]:

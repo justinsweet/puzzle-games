@@ -1,12 +1,14 @@
 extends Node2D
-## Tilt prototype: gray-box board, swipe/arrow input, undo, restart, hints, stars.
+## Tilt: start screen, worlds of levels, swipe to slide marbles into matching holes.
 
 const Rules := preload("res://scripts/tilt_rules.gd")
+const LevelSelect := preload("res://addons/studio_core/level_select.gd")
+const Fx := preload("res://addons/studio_core/fx.gd")
 
 const LEVELS_PATH := "res://levels/levels.json"
 const SWIPE_MIN_PX := 40.0
 const SECONDS_PER_CELL := 0.06
-const FREE_HINTS := 3
+const ACCENT := Color("#f4a261")
 
 const BG_COLOR := Color("#2b2d42")
 const FLOOR_COLOR := Color("#8d99ae")
@@ -18,8 +20,10 @@ const MARBLE_COLORS := {
 	"y": Color("#f4a261"),
 	"p": Color("#9b5de5"),
 }
+const PAD_COLORS := [Color("#c77dff"), Color("#ffd166"), Color("#06d6a0"), Color("#ef476f")]
 
-var levels: Array = []
+var levels: Array = []   # flat list; each level also has "world" (index)
+var worlds: Array = []   # {"name", "intro", "start", "count"}
 var level_index := 0
 var lvl: Dictionary = {}
 var marbles: Array = []
@@ -27,24 +31,23 @@ var holes: Dictionary = {}
 var history: Array = []
 var moves := 0
 var won := false
-var hints_left := FREE_HINTS
+var in_menu := true
 
-# Animation state
 var animating := false
 var anim_t := 0.0
 var anim_marbles: Array = []
-var anim_max_dist := 0.0
-var anim_dir := Vector2i.ZERO
+var anim_max_len := 0.0
+var pulse := 0.0
 
-# Layout
 var cell := 64.0
 var origin := Vector2.ZERO
 
-# Input
 var _touch_start := Vector2.ZERO
 var _touching := false
+var _tex_cache := {}
 
-# UI
+var game_ui: Control
+var menu: Control
 var title_label: Label
 var status_label: Label
 var hint_button: Button
@@ -55,16 +58,46 @@ func _ready() -> void:
 	_load_levels()
 	_build_ui()
 	get_viewport().size_changed.connect(_layout)
-	_start_level(0)
+	show_menu()
 
 
 func _load_levels() -> void:
-	var text := FileAccess.get_file_as_string(LEVELS_PATH)
-	var data = JSON.parse_string(text)
-	if data == null or not data.has("levels"):
+	var data = JSON.parse_string(FileAccess.get_file_as_string(LEVELS_PATH))
+	if data == null or not data.has("worlds"):
 		push_error("Could not read " + LEVELS_PATH)
 		return
-	levels = data["levels"]
+	for wi in data["worlds"].size():
+		var w: Dictionary = data["worlds"][wi]
+		worlds.append({"name": w["name"], "intro": w["intro"], "start": levels.size(), "count": w["levels"].size()})
+		for l in w["levels"]:
+			l["world"] = wi
+			levels.append(l)
+
+
+## Optional art: res://assets/<name>.png is used if it exists, otherwise shapes are drawn.
+func _tex(name: String) -> Texture2D:
+	if not _tex_cache.has(name):
+		var path := "res://assets/%s.png" % name
+		_tex_cache[name] = load(path) if ResourceLoader.exists(path) else null
+	return _tex_cache[name]
+
+
+# ---------------------------------------------------------------- menu / flow
+
+func show_menu() -> void:
+	in_menu = true
+	animating = false
+	game_ui.visible = false
+	menu.visible = true
+	menu.refresh()
+	queue_redraw()
+
+
+func _on_level_chosen(index: int) -> void:
+	menu.visible = false
+	game_ui.visible = true
+	in_menu = false
+	_start_level(index)
 
 
 func _start_level(index: int) -> void:
@@ -79,7 +112,11 @@ func _start_level(index: int) -> void:
 	won = false
 	animating = false
 	_layout()
-	_update_ui("Swipe to tilt the board.")
+	var w: Dictionary = worlds[levels[level_index]["world"]]
+	if level_index == w["start"]:
+		_update_ui(w["name"] + ": " + w["intro"])
+	else:
+		_update_ui("Swipe to tilt the board.")
 
 
 func _layout() -> void:
@@ -98,6 +135,8 @@ func _layout() -> void:
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(event: InputEvent) -> void:
+	if in_menu:
+		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_touch_start = event.position
@@ -120,28 +159,55 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R: _on_restart()
 			KEY_H: _on_hint()
 			KEY_N: _on_next()
-			KEY_P: _start_level(level_index - 1)
+			KEY_ESCAPE, KEY_M: show_menu()
 
 
 # ---------------------------------------------------------------- moves
 
+## Number of cells a path covers (a teleport jump counts as zero).
+static func _path_len(path: Array) -> float:
+	var n := 0.0
+	for i in range(1, path.size()):
+		if path[i] != null and path[i - 1] != null:
+			n += 1.0
+	return n
+
+
+## Position (in cells) after travelling s cells along a path.
+static func _pos_along(path: Array, s: float) -> Vector2:
+	var pos := Vector2(path[0])
+	var left := s
+	for i in range(1, path.size()):
+		if path[i] == null:
+			continue
+		if path[i - 1] == null:
+			pos = Vector2(path[i])  # came out of a teleport pad
+			continue
+		var step := Vector2(path[i]) - Vector2(path[i - 1])
+		if left >= 1.0:
+			pos = Vector2(path[i])
+			left -= 1.0
+		else:
+			return Vector2(path[i - 1]) + step * left
+	return pos
+
+
 func _try_move(dir: String) -> void:
 	if animating or won or lvl.is_empty():
 		return
-	var r := Rules.slide(lvl["w"], lvl["h"], lvl["walls"], marbles, holes, dir)
+	var r := Rules.slide(lvl["w"], lvl["h"], lvl["walls"], lvl["portals"], marbles, holes, dir)
 	var moved := false
-	anim_max_dist = 0.0
+	anim_max_len = 0.0
 	for m in r["marbles"]:
-		var dist := Vector2(m["pos"] - m["from"]).length()
-		if dist > 0.0:
+		var length := _path_len(m["path"])
+		if m["pos"] != m["from"] or length > 0.0:
 			moved = true
-		anim_max_dist = maxf(anim_max_dist, dist)
+		anim_max_len = maxf(anim_max_len, length)
 	if not moved:
 		return
 	history.append({"marbles": marbles.duplicate(true), "holes": holes.duplicate()})
 	moves += 1
 	anim_marbles = r["marbles"]
-	anim_dir = Rules.DIRS[dir]
 	marbles = []
 	for m in r["marbles"]:
 		if not m["dropped"]:
@@ -150,7 +216,7 @@ func _try_move(dir: String) -> void:
 	animating = true
 	anim_t = 0.0
 	var tween := create_tween()
-	tween.tween_property(self, "anim_t", 1.0, SECONDS_PER_CELL * anim_max_dist + 0.04)
+	tween.tween_property(self, "anim_t", 1.0, SECONDS_PER_CELL * anim_max_len + 0.04)
 	tween.finished.connect(_on_move_finished)
 	_update_ui("")
 
@@ -162,11 +228,16 @@ func _on_move_finished() -> void:
 		won = true
 		var par: int = levels[level_index]["par"]
 		var stars := 3 if moves <= par else (2 if moves <= par + 3 else 1)
-		_update_ui("Solved in %d moves (par %d)  -  Stars: %d/3" % [moves, par, stars])
+		Progress.record_stars(level_index, stars)
+		_update_ui("Solved in %d moves (par %d)" % [moves, par], stars)
+		var colors := []
+		for k in MARBLE_COLORS:
+			colors.append(MARBLE_COLORS[k])
+		Fx.burst(self, origin + Vector2(lvl["w"], lvl["h"]) * cell / 2.0, colors)
 
 
 func _on_undo() -> void:
-	if animating or history.is_empty():
+	if animating or history.is_empty() or in_menu:
 		return
 	var last: Dictionary = history.pop_back()
 	marbles = last["marbles"]
@@ -178,24 +249,24 @@ func _on_undo() -> void:
 
 
 func _on_restart() -> void:
-	if not animating:
+	if not animating and not in_menu:
 		_start_level(level_index)
 
 
 func _on_hint() -> void:
-	if animating or won:
+	if animating or won or in_menu:
 		return
-	if hints_left > 0:
-		hints_left -= 1
+	if Progress.hints > 0:
+		Progress.hints -= 1
 		_show_hint()
 	else:
 		Ads.show_rewarded(func():
-			hints_left += 1
+			Progress.hints += 1
 			_update_ui("You earned a hint. Tap Hint to use it."))
 
 
 func _show_hint() -> void:
-	var path := Rules.solve(lvl["w"], lvl["h"], lvl["walls"], marbles, holes)
+	var path := Rules.solve(lvl["w"], lvl["h"], lvl["walls"], lvl["portals"], marbles, holes)
 	if path.is_empty():
 		_update_ui("No solution from here. Try Undo or Restart.")
 		return
@@ -203,21 +274,32 @@ func _show_hint() -> void:
 	_update_ui("Hint: swipe %s  (%d moves left at best)" % [names[path[0]], path.size()])
 
 
+func _can_go_next() -> bool:
+	if won:
+		return true
+	return level_index + 1 < levels.size() and Progress.is_unlocked(level_index + 1)
+
+
 func _on_next() -> void:
-	if animating:
+	if animating or in_menu or not _can_go_next():
 		return
 	var finished_level := level_index + 1
-	var go_next := func(): _start_level((level_index + 1) % levels.size())
+	var go_next := func():
+		if level_index + 1 >= levels.size():
+			show_menu()
+		else:
+			_start_level(level_index + 1)
 	if won:
 		Ads.on_level_complete(finished_level, go_next)
 	else:
-		go_next.call()  # prototype: allow skipping while testing
+		go_next.call()
 
 
 # ---------------------------------------------------------------- drawing
 
-func _process(_delta: float) -> void:
-	if animating:
+func _process(delta: float) -> void:
+	pulse += delta
+	if not in_menu:
 		queue_redraw()
 
 
@@ -226,25 +308,55 @@ func _cell_center(p: Vector2) -> Vector2:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), BG_COLOR)
+	if in_menu:
+		return
+	var bg := _tex("background_world%d" % (levels[level_index]["world"] + 1))
+	if bg:
+		draw_texture_rect(bg, Rect2(Vector2.ZERO, get_viewport_rect().size), false)
+	else:
+		draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), BG_COLOR)
 	if lvl.is_empty():
 		return
+	var floor_tex := _tex("floor")
+	var wall_tex := _tex("wall")
 	for y in lvl["h"]:
 		for x in lvl["w"]:
-			var rect := Rect2(origin + Vector2(x, y) * cell, Vector2(cell, cell)).grow(-2.0)
-			draw_rect(rect, WALL_COLOR if lvl["walls"].has(Vector2i(x, y)) else FLOOR_COLOR)
+			var rect := Rect2(origin + Vector2(x, y) * cell, Vector2(cell, cell))
+			var is_wall: bool = lvl["walls"].has(Vector2i(x, y))
+			var tex := wall_tex if is_wall else floor_tex
+			if tex:
+				draw_texture_rect(tex, rect, false)
+			else:
+				draw_rect(rect.grow(-2.0), WALL_COLOR if is_wall else FLOOR_COLOR)
+
+	# Teleport pads: swirling rings, linked pads share a color.
+	for p in lvl["portals"]:
+		var id: String = lvl["portal_ids"][p]
+		var col: Color = PAD_COLORS[(int(id) - 1) % PAD_COLORS.size()]
+		var c := _cell_center(Vector2(p))
+		var pad_tex := _tex("pad_%s" % id)
+		if pad_tex:
+			draw_texture_rect(pad_tex, Rect2(c - Vector2(cell, cell) / 2.0, Vector2(cell, cell)), false)
+			continue
+		draw_circle(c, cell * 0.38, Color(col, 0.25))
+		for k in 3:
+			var a := pulse * 2.5 + k * TAU / 3.0
+			draw_arc(c, cell * (0.18 + 0.08 * k), a, a + PI * 0.9, 16, col, 3.0)
 
 	# Holes: open = colored ring; filled = solid dim circle.
-	# While a marble is still rolling toward its hole, keep that hole drawn open.
 	var open_now := holes.duplicate()
 	if animating:
 		for m in anim_marbles:
 			if m["dropped"]:
 				open_now[m["pos"]] = m["color"]
 	for p in lvl["holes"]:
-		var col: Color = MARBLE_COLORS.get(lvl["holes"][p], Color.WHITE)
+		var key: String = lvl["holes"][p]
+		var col: Color = MARBLE_COLORS.get(key, Color.WHITE)
 		var c := _cell_center(Vector2(p))
-		if open_now.has(p):
+		var hole_tex := _tex("hole_%s" % key)
+		if hole_tex and open_now.has(p):
+			draw_texture_rect(hole_tex, Rect2(c - Vector2(cell, cell) / 2.0, Vector2(cell, cell)), false)
+		elif open_now.has(p):
 			draw_circle(c, cell * 0.32, Color(0, 0, 0, 0.35))
 			draw_arc(c, cell * 0.30, 0.0, TAU, 40, col, maxf(3.0, cell * 0.08))
 		else:
@@ -252,12 +364,11 @@ func _draw() -> void:
 
 	if animating:
 		for m in anim_marbles:
-			var from := Vector2(m["from"])
-			var dist := Vector2(m["pos"] - m["from"]).length()
-			var travelled := minf(dist, anim_t * anim_max_dist)
-			var pos := from + Vector2(anim_dir) * travelled
+			var length := _path_len(m["path"])
+			var travelled := minf(length, anim_t * anim_max_len)
+			var pos := _pos_along(m["path"], travelled)
 			var size_scale := 1.0
-			if m["dropped"] and travelled >= dist:
+			if m["dropped"] and travelled >= length:
 				size_scale = 0.6
 			_draw_marble(_cell_center(pos), m["color"], size_scale)
 	else:
@@ -266,8 +377,12 @@ func _draw() -> void:
 
 
 func _draw_marble(c: Vector2, color_key: String, size_scale: float) -> void:
-	var col: Color = MARBLE_COLORS.get(color_key, Color.WHITE)
 	var r := cell * 0.36 * size_scale
+	var tex := _tex("marble_%s" % color_key)
+	if tex:
+		draw_texture_rect(tex, Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0), false)
+		return
+	var col: Color = MARBLE_COLORS.get(color_key, Color.WHITE)
 	draw_circle(c + Vector2(0, r * 0.12), r, Color(0, 0, 0, 0.3))
 	draw_circle(c, r, col)
 	draw_circle(c + Vector2(-r * 0.35, -r * 0.35), r * 0.28, Color(1, 1, 1, 0.45))
@@ -278,27 +393,36 @@ func _draw_marble(c: Vector2, color_key: String, size_scale: float) -> void:
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
-	var root := Control.new()
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(root)
+	game_ui = Control.new()
+	game_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	game_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(game_ui)
 
-	title_label = _make_label(root, 44, 40.0, 100.0)
-	status_label = _make_label(root, 24, 105.0, 160.0)
+	title_label = _make_label(game_ui, 40, 40.0, 100.0)
+	status_label = _make_label(game_ui, 24, 105.0, 160.0)
 
 	var bar := HBoxContainer.new()
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 14)
+	bar.add_theme_constant_override("separation", 10)
 	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	bar.offset_top = -190.0
 	bar.offset_bottom = -90.0
-	root.add_child(bar)
+	game_ui.add_child(bar)
 
+	_make_button(bar, "Menu", show_menu)
 	_make_button(bar, "Undo", _on_undo)
 	_make_button(bar, "Restart", _on_restart)
 	hint_button = _make_button(bar, "Hint", _on_hint)
 	next_button = _make_button(bar, "Next", _on_next)
+
+	var menu_layer := CanvasLayer.new()
+	menu_layer.layer = 10
+	add_child(menu_layer)
+	menu = LevelSelect.new()
+	menu.setup("Tilt", worlds, ACCENT, _tex("mascot"), _tex("menu_background"))
+	menu.level_chosen.connect(_on_level_chosen)
+	menu_layer.add_child(menu)
 
 
 func _make_label(parent: Control, font_size: int, top: float, bottom: float) -> Label:
@@ -319,22 +443,23 @@ func _make_label(parent: Control, font_size: int, top: float, bottom: float) -> 
 func _make_button(parent: Control, text: String, callback: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(150, 90)
-	b.add_theme_font_size_override("font_size", 28)
+	b.custom_minimum_size = Vector2(128, 90)
+	b.add_theme_font_size_override("font_size", 26)
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(callback)
 	parent.add_child(b)
 	return b
 
 
-func _update_ui(message: String) -> void:
+func _update_ui(message: String, stars: int = 0) -> void:
 	if levels.is_empty():
 		return
 	var par: int = levels[level_index]["par"]
-	title_label.text = "Level %d   Moves %d   Par %d" % [level_index + 1, moves, par]
+	var w: Dictionary = worlds[levels[level_index]["world"]]
+	title_label.text = "%s %d-%d   Moves %d   Par %d" % [w["name"], level_index - int(w["start"]) + 1, int(w["count"]), moves, par]
 	if message != "":
-		status_label.text = message
+		status_label.text = message + ("   " + "*".repeat(stars) if stars > 0 else "")
 	elif not won:
 		status_label.text = ""
-	hint_button.text = "Hint (%d)" % hints_left if hints_left > 0 else "Hint (ad)"
-	next_button.text = "Next" if won else "Skip"
+	hint_button.text = "Hint %d" % Progress.hints if Progress.hints > 0 else "Hint (ad)"
+	next_button.disabled = not _can_go_next()

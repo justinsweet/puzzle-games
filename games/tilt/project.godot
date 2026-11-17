@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.7", "Mobile")
 [autoload]
 
 Ads="*res://addons/studio_core/ads_manager.gd"
+Progress="*res://addons/studio_core/progress.gd"
 
 [display]
 
