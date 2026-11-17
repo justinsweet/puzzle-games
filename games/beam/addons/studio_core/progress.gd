@@ -6,7 +6,8 @@ extends Node
 const PATH := "user://progress.json"
 const STARTING_HINTS := 3
 
-var _data := {"stars": {}, "hints": STARTING_HINTS, "unlock_all": false}
+var _data := {"stars": {}, "hints": STARTING_HINTS, "unlock_all": false,
+	"settings": {"sound": true, "music": true, "vibration": true}}
 
 
 func _ready() -> void:
@@ -68,6 +69,18 @@ var unlock_all: bool:
 		save()
 
 
+## Sound, music and vibration switches (true = on).
+func get_setting(name: String) -> bool:
+	return bool(_data["settings"].get(name, true))
+
+
+func set_setting(name: String, value: bool) -> void:
+	_data["settings"][name] = value
+	save()
+
+
+## Clears stars, hints and the testing switch; keeps sound/music/vibration settings.
 func reset() -> void:
-	_data = {"stars": {}, "hints": STARTING_HINTS, "unlock_all": false}
+	var settings: Dictionary = _data["settings"]
+	_data = {"stars": {}, "hints": STARTING_HINTS, "unlock_all": false, "settings": settings}
 	save()

@@ -5,6 +5,7 @@ const Rules := preload("res://scripts/beam_rules.gd")
 const LevelSelect := preload("res://addons/studio_core/level_select.gd")
 const Fx := preload("res://addons/studio_core/fx.gd")
 const MascotView := preload("res://addons/studio_core/mascot_view.gd")
+const WinPanel := preload("res://addons/studio_core/win_panel.gd")
 
 const LEVELS_PATH := "res://levels/levels.json"
 const TAP_MAX_PX := 24.0
@@ -58,6 +59,7 @@ var status_label: Label
 var hint_button: Button
 var next_button: Button
 var mascot: Control
+var win_panel: Control
 
 
 func _ready() -> void:
@@ -91,6 +93,9 @@ func _tex(name: String) -> Texture2D:
 # ---------------------------------------------------------------- menu / flow
 
 func show_menu() -> void:
+	Sfx.music("menu")
+	if win_panel:
+		win_panel.visible = false
 	in_menu = true
 	_drag_index = -1
 	game_ui.visible = false
@@ -121,6 +126,9 @@ func _start_level(index: int) -> void:
 	_retrace()
 	_layout()
 	mascot.react("excited", 1.5)
+	Sfx.music("world%d" % (int(levels[level_index]["world"]) + 1))
+	if win_panel:
+		win_panel.visible = false
 	var w: Dictionary = worlds[levels[level_index]["world"]]
 	if level_index == w["start"]:
 		_update_ui(w["name"] + ": " + w["intro"])
@@ -241,15 +249,24 @@ func drop_mover(index: int, c: Vector2i) -> void:
 
 func _after_change() -> void:
 	taps += 1
+	var lit_before: int = traced["lit"].size() if traced.has("lit") else 0
+	Sfx.play("flip")
 	mascot.poke()
 	hint = {}
 	_retrace()
+	if traced["lit"].size() > lit_before:
+		Sfx.play("chime")
+	if traced["shadow"]:
+		Sfx.play("buzz")
 	if traced["lit"].size() == lvl["targets"].size() and not traced["shadow"]:
 		won = true
 		var par: int = levels[level_index]["par"]
 		var stars := 3 if taps <= par else (2 if taps <= par + 2 else 1)
 		Progress.record_stars(level_index, stars)
 		mascot.react("cheering", 4.0)
+		Sfx.play("win", 0.0)
+		Sfx.vibrate(60)
+		_show_win_panel(stars)
 		_update_ui("All crystals lit in %d moves (par %d)" % [taps, par], stars)
 		var colors := []
 		for p in lvl["targets"]:
@@ -290,6 +307,7 @@ func _on_hint() -> void:
 
 
 func _show_hint() -> void:
+	Sfx.play("hint")
 	mascot.react("thinking", 3.0)
 	hint = Rules.next_hint(lvl, fixed, movers)
 	if hint.is_empty():
@@ -299,6 +317,17 @@ func _show_hint() -> void:
 	else:
 		_update_ui("Hint: flip the glowing mirror.")
 	queue_redraw()
+
+
+func _show_win_panel(stars: int) -> void:
+	var shown_level := level_index
+	var w: Dictionary = worlds[levels[level_index]["world"]]
+	var level_name := "%s %d-%d" % [w["name"], level_index - int(w["start"]) + 1, int(w["count"])]
+	var count := taps
+	var par: int = levels[level_index]["par"]
+	await get_tree().create_timer(0.8).timeout
+	if won and not in_menu and level_index == shown_level:
+		win_panel.show_result(level_name, stars, count, par, level_index + 1 < levels.size())
 
 
 func _can_go_next() -> bool:
@@ -607,6 +636,16 @@ func _build_ui() -> void:
 	_make_button(bar, "Restart", _on_restart)
 	hint_button = _make_button(bar, "Hint", _on_hint)
 	next_button = _make_button(bar, "Next", _on_next)
+
+	var panel_layer := CanvasLayer.new()
+	panel_layer.layer = 5
+	add_child(panel_layer)
+	win_panel = WinPanel.new()
+	win_panel.setup(ACCENT, _tex("mascot_cheering") if _tex("mascot_cheering") else _tex("mascot"))
+	win_panel.next_pressed.connect(_on_next)
+	win_panel.replay_pressed.connect(_on_restart)
+	win_panel.menu_pressed.connect(show_menu)
+	panel_layer.add_child(win_panel)
 
 	var menu_layer := CanvasLayer.new()
 	menu_layer.layer = 10

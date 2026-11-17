@@ -96,7 +96,9 @@ func _build() -> void:
 	play.custom_minimum_size = Vector2(0, 100)
 	play.add_theme_font_size_override("font_size", 44)
 	play.focus_mode = Control.FOCUS_NONE
-	play.pressed.connect(func(): level_chosen.emit(Progress.next_unplayed(_level_count())))
+	play.pressed.connect(func():
+		Sfx.play("tap")
+		level_chosen.emit(Progress.next_unplayed(_level_count())))
 	col.add_child(play)
 
 	var scroll := ScrollContainer.new()
@@ -107,6 +109,21 @@ func _build() -> void:
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 12)
 	scroll.add_child(_list)
+
+	var settings := HBoxContainer.new()
+	settings.alignment = BoxContainer.ALIGNMENT_CENTER
+	settings.add_theme_constant_override("separation", 12)
+	col.add_child(settings)
+	for name in ["sound", "music", "vibration"]:
+		var toggle := CheckButton.new()
+		toggle.text = name.capitalize()
+		toggle.focus_mode = Control.FOCUS_NONE
+		toggle.button_pressed = Progress.get_setting(name)
+		toggle.toggled.connect(func(on):
+			Progress.set_setting(name, on)
+			if name == "music":
+				Sfx.refresh_music())
+		settings.add_child(toggle)
 
 	var tools := HBoxContainer.new()
 	tools.alignment = BoxContainer.ALIGNMENT_CENTER

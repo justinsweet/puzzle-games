@@ -5,6 +5,7 @@ const Rules := preload("res://scripts/tilt_rules.gd")
 const LevelSelect := preload("res://addons/studio_core/level_select.gd")
 const Fx := preload("res://addons/studio_core/fx.gd")
 const MascotView := preload("res://addons/studio_core/mascot_view.gd")
+const WinPanel := preload("res://addons/studio_core/win_panel.gd")
 
 const LEVELS_PATH := "res://levels/levels.json"
 const SWIPE_MIN_PX := 40.0
@@ -55,6 +56,7 @@ var status_label: Label
 var hint_button: Button
 var next_button: Button
 var mascot: Control
+var win_panel: Control
 
 
 func _ready() -> void:
@@ -88,6 +90,9 @@ func _tex(name: String) -> Texture2D:
 # ---------------------------------------------------------------- menu / flow
 
 func show_menu() -> void:
+	Sfx.music("menu")
+	if win_panel:
+		win_panel.visible = false
 	in_menu = true
 	animating = false
 	game_ui.visible = false
@@ -117,6 +122,9 @@ func _start_level(index: int) -> void:
 	animating = false
 	_layout()
 	mascot.react("excited", 1.5)
+	Sfx.music("world%d" % (int(levels[level_index]["world"]) + 1))
+	if win_panel:
+		win_panel.visible = false
 	var w: Dictionary = worlds[levels[level_index]["world"]]
 	if level_index == w["start"]:
 		_update_ui(w["name"] + ": " + w["intro"])
@@ -215,6 +223,11 @@ func _try_move(dir: String) -> void:
 		return
 	history.append({"marbles": marbles.duplicate(true), "holes": holes.duplicate(), "broken": broken.duplicate()})
 	moves += 1
+	Sfx.play("slide")
+	for m in r["marbles"]:
+		if m["path"].has(null):
+			Sfx.play("warp")
+			break
 	anim_marbles = r["marbles"]
 	marbles = []
 	for m in r["marbles"]:
@@ -232,6 +245,11 @@ func _try_move(dir: String) -> void:
 
 func _on_move_finished() -> void:
 	animating = false
+	for m in anim_marbles:
+		if m["dropped"]:
+			Sfx.play("plunk")
+			Sfx.vibrate(20)
+			break
 	queue_redraw()
 	if marbles.is_empty():
 		won = true
@@ -239,6 +257,9 @@ func _on_move_finished() -> void:
 		var stars := 3 if moves <= par else (2 if moves <= par + 3 else 1)
 		Progress.record_stars(level_index, stars)
 		mascot.react("cheering", 4.0)
+		Sfx.play("win", 0.0)
+		Sfx.vibrate(60)
+		_show_win_panel(stars)
 		_update_ui("Solved in %d moves (par %d)" % [moves, par], stars)
 		var colors := []
 		for k in MARBLE_COLORS:
@@ -277,6 +298,7 @@ func _on_hint() -> void:
 
 
 func _show_hint() -> void:
+	Sfx.play("hint")
 	mascot.react("thinking", 3.0)
 	var path := Rules.solve(lvl, marbles, holes, broken)
 	if path.is_empty():
@@ -284,6 +306,17 @@ func _show_hint() -> void:
 		return
 	var names := {"U": "UP", "D": "DOWN", "L": "LEFT", "R": "RIGHT"}
 	_update_ui("Hint: swipe %s  (%d moves left at best)" % [names[path[0]], path.size()])
+
+
+func _show_win_panel(stars: int) -> void:
+	var shown_level := level_index
+	var w: Dictionary = worlds[levels[level_index]["world"]]
+	var level_name := "%s %d-%d" % [w["name"], level_index - int(w["start"]) + 1, int(w["count"])]
+	var count := moves
+	var par: int = levels[level_index]["par"]
+	await get_tree().create_timer(0.8).timeout
+	if won and not in_menu and level_index == shown_level:
+		win_panel.show_result(level_name, stars, count, par, level_index + 1 < levels.size())
 
 
 func _can_go_next() -> bool:
@@ -521,6 +554,16 @@ func _build_ui() -> void:
 	_make_button(bar, "Restart", _on_restart)
 	hint_button = _make_button(bar, "Hint", _on_hint)
 	next_button = _make_button(bar, "Next", _on_next)
+
+	var panel_layer := CanvasLayer.new()
+	panel_layer.layer = 5
+	add_child(panel_layer)
+	win_panel = WinPanel.new()
+	win_panel.setup(ACCENT, _tex("mascot_cheering") if _tex("mascot_cheering") else _tex("mascot"))
+	win_panel.next_pressed.connect(_on_next)
+	win_panel.replay_pressed.connect(_on_restart)
+	win_panel.menu_pressed.connect(show_menu)
+	panel_layer.add_child(win_panel)
 
 	var menu_layer := CanvasLayer.new()
 	menu_layer.layer = 10
