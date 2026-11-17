@@ -29,6 +29,7 @@ var level_index := 0
 var lvl: Dictionary = {}
 var marbles: Array = []
 var holes: Dictionary = {}
+var broken: Dictionary = {}   # cracked walls that have broken
 var history: Array = []
 var moves := 0
 var won := false
@@ -106,9 +107,10 @@ func _start_level(index: int) -> void:
 	if levels.is_empty():
 		return
 	level_index = clampi(index, 0, levels.size() - 1)
-	lvl = Rules.parse(levels[level_index]["rows"])
+	lvl = Rules.parse(levels[level_index])
 	marbles = lvl["marbles"].duplicate(true)
 	holes = lvl["holes"].duplicate()
+	broken = {}
 	history.clear()
 	moves = 0
 	won = false
@@ -199,7 +201,7 @@ func _try_move(dir: String) -> void:
 	if animating or won or lvl.is_empty():
 		return
 	mascot.poke()
-	var r := Rules.slide(lvl["w"], lvl["h"], lvl["walls"], lvl["portals"], marbles, holes, dir)
+	var r := Rules.slide(lvl, marbles, holes, broken, dir)
 	var moved := false
 	anim_max_len = 0.0
 	for m in r["marbles"]:
@@ -207,9 +209,11 @@ func _try_move(dir: String) -> void:
 		if m["pos"] != m["from"] or length > 0.0:
 			moved = true
 		anim_max_len = maxf(anim_max_len, length)
+	if r["broken"].size() != broken.size():
+		moved = true  # bumping a cracked wall counts as a move
 	if not moved:
 		return
-	history.append({"marbles": marbles.duplicate(true), "holes": holes.duplicate()})
+	history.append({"marbles": marbles.duplicate(true), "holes": holes.duplicate(), "broken": broken.duplicate()})
 	moves += 1
 	anim_marbles = r["marbles"]
 	marbles = []
@@ -217,6 +221,7 @@ func _try_move(dir: String) -> void:
 		if not m["dropped"]:
 			marbles.append({"pos": m["pos"], "color": m["color"]})
 	holes = r["holes"]
+	broken = r["broken"]
 	animating = true
 	anim_t = 0.0
 	var tween := create_tween()
@@ -247,6 +252,7 @@ func _on_undo() -> void:
 	var last: Dictionary = history.pop_back()
 	marbles = last["marbles"]
 	holes = last["holes"]
+	broken = last["broken"]
 	moves -= 1
 	won = false
 	queue_redraw()
@@ -272,7 +278,7 @@ func _on_hint() -> void:
 
 func _show_hint() -> void:
 	mascot.react("thinking", 3.0)
-	var path := Rules.solve(lvl["w"], lvl["h"], lvl["walls"], lvl["portals"], marbles, holes)
+	var path := Rules.solve(lvl, marbles, holes, broken)
 	if path.is_empty():
 		_update_ui("No solution from here. Try Undo or Restart.")
 		return
@@ -349,6 +355,8 @@ func _draw() -> void:
 			var a := pulse * 2.5 + k * TAU / 3.0
 			draw_arc(c, cell * (0.18 + 0.08 * k), a, a + PI * 0.9, 16, col, 3.0)
 
+	_draw_pieces()
+
 	# Holes: open = colored ring; filled = solid dim circle.
 	var open_now := holes.duplicate()
 	if animating:
@@ -376,10 +384,91 @@ func _draw() -> void:
 			var size_scale := 1.0
 			if m["dropped"] and travelled >= length:
 				size_scale = 0.6
-			_draw_marble(_cell_center(pos), m["color"], size_scale)
+			var color_now: String = m["color"]
+			if m["recolor_at"] >= 0 and travelled < m["recolor_at"]:
+				color_now = m["from_color"]
+			_draw_marble(_cell_center(pos), color_now, size_scale)
 	else:
 		for m in marbles:
 			_draw_marble(_cell_center(Vector2(m["pos"])), m["color"], 1.0)
+
+
+## Mud, one-way gates, paint pads, cracked walls, buttons and gates.
+## Each uses res://assets/<name>.png when it exists, otherwise a simple shape.
+func _draw_pieces() -> void:
+	var half := Vector2(cell, cell) / 2.0
+	for p in lvl["mud"]:
+		var c := _cell_center(Vector2(p))
+		var t := _tex("mud")
+		if t:
+			draw_texture_rect(t, Rect2(c - half, half * 2.0), false)
+		else:
+			draw_circle(c, cell * 0.40, Color("#6b4f2a"))
+			draw_circle(c + Vector2(-cell * 0.12, -cell * 0.08), cell * 0.12, Color("#7d5e34"))
+			draw_circle(c + Vector2(cell * 0.14, cell * 0.10), cell * 0.09, Color("#5a4223"))
+	for p in lvl["arrows"]:
+		var c := _cell_center(Vector2(p))
+		var d := Vector2(lvl["arrows"][p])
+		var t := _tex("arrow")
+		if t:
+			draw_set_transform(c, d.angle() + PI / 2.0, Vector2.ONE)  # art points up
+			draw_texture_rect(t, Rect2(-half, half * 2.0), false)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		else:
+			draw_rect(Rect2(c - half, half * 2.0).grow(-4.0), Color(0.55, 0.40, 0.22, 0.35))
+			var side := Vector2(-d.y, d.x)
+			for k in 2:
+				var tip := c + d * cell * (0.05 + 0.22 * k)
+				draw_polyline(PackedVector2Array([tip - d * cell * 0.18 + side * cell * 0.22, tip, tip - d * cell * 0.18 - side * cell * 0.22]), Color("#f1e3c6"), maxf(3.0, cell * 0.07))
+	for p in lvl["paint"]:
+		var key: String = lvl["paint"][p]
+		var c := _cell_center(Vector2(p))
+		var t := _tex("paint_%s" % key)
+		if t:
+			draw_texture_rect(t, Rect2(c - half, half * 2.0), false)
+		else:
+			var col: Color = MARBLE_COLORS.get(key, Color.WHITE)
+			for k in 6:
+				var a := TAU * k / 6.0 + 0.4
+				draw_circle(c + Vector2(cos(a), sin(a)) * cell * 0.22, cell * 0.12, col)
+			draw_circle(c, cell * 0.22, col)
+	var gates_now := Rules.gates_open(lvl, marbles)
+	for p in lvl["buttons"]:
+		var c := _cell_center(Vector2(p))
+		var pressed := false
+		for m in marbles:
+			if m["pos"] == p:
+				pressed = true
+		var t := _tex("button_down" if pressed else "button")
+		if t:
+			draw_texture_rect(t, Rect2(c - half, half * 2.0), false)
+		else:
+			draw_circle(c, cell * 0.34, Color("#3d405b"))
+			draw_circle(c, cell * (0.22 if pressed else 0.27), Color("#e9c46a") if not pressed else Color("#b08a3c"))
+	for p in lvl["gates"]:
+		var r := Rect2(origin + Vector2(p) * cell, Vector2(cell, cell))
+		var t := _tex("gate_open" if gates_now else "gate_closed")
+		if t:
+			draw_texture_rect(t, r, false)
+		elif gates_now:
+			draw_rect(r.grow(-6.0), Color(0.91, 0.77, 0.42, 0.6), false, 3.0)
+		else:
+			draw_rect(r.grow(-3.0), Color("#7a5c3a"))
+			for k in 4:
+				var x := r.position.x + r.size.x * (0.2 + 0.2 * k)
+				draw_line(Vector2(x, r.position.y + 4), Vector2(x, r.end.y - 4), Color("#e9c46a"), maxf(3.0, cell * 0.06))
+	for p in lvl["cracked"]:
+		if broken.has(p):
+			continue
+		var r := Rect2(origin + Vector2(p) * cell, Vector2(cell, cell))
+		var t := _tex("wall_cracked")
+		if t:
+			draw_texture_rect(t, r, false)
+		else:
+			draw_rect(r.grow(-2.0), WALL_COLOR.lightened(0.15))
+			var a := r.position + r.size * Vector2(0.3, 0.1)
+			draw_polyline(PackedVector2Array([a, r.position + r.size * Vector2(0.5, 0.45), r.position + r.size * Vector2(0.35, 0.65), r.position + r.size * Vector2(0.6, 0.9)]), Color("#1d1d2b"), maxf(2.0, cell * 0.05))
+			draw_line(r.position + r.size * Vector2(0.5, 0.45), r.position + r.size * Vector2(0.8, 0.35), Color("#1d1d2b"), maxf(2.0, cell * 0.04))
 
 
 func _draw_marble(c: Vector2, color_key: String, size_scale: float) -> void:

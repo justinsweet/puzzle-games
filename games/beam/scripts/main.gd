@@ -126,6 +126,8 @@ func _start_level(index: int) -> void:
 		_update_ui(w["name"] + ": " + w["intro"])
 	elif not movers.is_empty():
 		_update_ui("Drag the mirrors with handles. Tap any mirror to flip it.")
+	elif lvl["max_bounces"] > 0:
+		_update_ui("Beams fade after %d bounces." % lvl["max_bounces"])
 	else:
 		_update_ui("Tap a mirror to flip it.")
 
@@ -207,6 +209,9 @@ func tap_cell(c: Vector2i) -> void:
 	elif fixed.has(c):
 		_save_history()
 		fixed[c] = "\\" if fixed[c] == "/" else "/"
+		if lvl["links"].has(c):
+			var twin: Vector2i = lvl["links"][c]
+			fixed[twin] = "\\" if fixed[twin] == "/" else "/"
 	else:
 		return
 	_after_change()
@@ -216,7 +221,8 @@ func can_drop(c: Vector2i) -> bool:
 	if c.x < 0 or c.y < 0 or c.x >= lvl["w"] or c.y >= lvl["h"]:
 		return false
 	if lvl["walls"].has(c) or lvl["portals"].has(c) or lvl["targets"].has(c) \
-			or lvl["filters"].has(c) or lvl["tints"].has(c) or fixed.has(c) or _mover_at(c) >= 0:
+			or lvl["filters"].has(c) or lvl["tints"].has(c) or fixed.has(c) or _mover_at(c) >= 0 \
+		or lvl["shadows"].has(c) or lvl["prisms"].has(c) or lvl["gates"].has(c):
 		return false
 	for e in lvl["emitters"]:
 		if e["pos"] == c:
@@ -238,7 +244,7 @@ func _after_change() -> void:
 	mascot.poke()
 	hint = {}
 	_retrace()
-	if traced["lit"].size() == lvl["targets"].size():
+	if traced["lit"].size() == lvl["targets"].size() and not traced["shadow"]:
 		won = true
 		var par: int = levels[level_index]["par"]
 		var stars := 3 if taps <= par else (2 if taps <= par + 2 else 1)
@@ -384,7 +390,10 @@ func _draw() -> void:
 			draw_rect(_cell_rect(hint["to"]).grow(-2.0), glow)
 			draw_dashed_line(_center(hint["from"]), _center(hint["to"]), Color(1, 0.9, 0.3, 0.8), 4.0, 12.0)
 
+	_draw_gates()
+	_draw_links()
 	_draw_beams()
+	_draw_prisms_and_shadows()
 
 	# Filters: colored gates on top of the beams.
 	for p in lvl["filters"]:
@@ -412,6 +421,79 @@ func _draw() -> void:
 		_draw_emitter(e)
 	for p in lvl["targets"]:
 		_draw_crystal(p, lvl["targets"][p], traced["lit"].has(p))
+
+
+## Circuit gates: solid bars while closed, a faint frame once a crystal opens them.
+func _draw_gates() -> void:
+	var opened: Dictionary = traced.get("opened", {})
+	for p in lvl["gates"]:
+		var r := _cell_rect(p)
+		var is_open: bool = opened.has(lvl["gates"][p])
+		var t := _tex("gate_open" if is_open else "gate_closed")
+		if t:
+			draw_texture_rect(t, r, false)
+		elif is_open:
+			draw_rect(r.grow(-6.0), Color(1, 0.85, 0.4, 0.5), false, 3.0)
+		else:
+			draw_rect(r.grow(-3.0), Color("#3a2f5c"))
+			for k in 4:
+				var y := r.position.y + r.size.y * (0.2 + 0.2 * k)
+				draw_line(Vector2(r.position.x + 4, y), Vector2(r.end.x - 4, y), Color("#ffd166"), maxf(3.0, cell * 0.06))
+	# A small marker on the crystal that opens a gate.
+	for p in lvl["opens"]:
+		draw_arc(_center(p), cell * 0.44, 0.0, TAU, 32, Color("#ffd166"), 2.0)
+
+
+## Twin mirrors: a dotted line joins each pair.
+func _draw_links() -> void:
+	var done := {}
+	for a in lvl["links"]:
+		if done.has(a):
+			continue
+		var b: Vector2i = lvl["links"][a]
+		done[a] = true
+		done[b] = true
+		draw_dashed_line(_center(a), _center(b), Color(0.75, 0.85, 1.0, 0.45), 3.0, 10.0)
+		for p in [a, b]:
+			draw_arc(_center(p), cell * 0.42, 0.0, TAU, 32, Color("#9ad1ff"), 3.0)
+
+
+func _draw_prisms_and_shadows() -> void:
+	for p in lvl["prisms"]:
+		var c := _center(p)
+		var r := cell * 0.36
+		var t := _tex("prism")
+		if t:
+			draw_texture_rect(t, Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0), false)
+			continue
+		var tri := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r * 0.9, r * 0.7), c + Vector2(-r * 0.9, r * 0.7)])
+		draw_colored_polygon(tri, Color(1, 1, 1, 0.35))
+		var outline := tri.duplicate()
+		outline.append(tri[0])
+		draw_polyline(outline, Color.WHITE, 3.0, true)
+		draw_line(c + Vector2(-r * 0.3, 0), c + Vector2(r * 0.5, r * 0.2), COLOR_BY_BITS[1], 2.0)
+		draw_line(c + Vector2(-r * 0.3, 0), c + Vector2(r * 0.5, r * 0.4), COLOR_BY_BITS[2], 2.0)
+		draw_line(c + Vector2(-r * 0.3, 0), c + Vector2(r * 0.5, r * 0.6), COLOR_BY_BITS[4], 2.0)
+	for p in lvl["shadows"]:
+		var c := _center(p)
+		var r := cell * 0.34
+		var touched := false
+		for beam in traced["beams"]:
+			var segs: Array = beam["segments"]
+			var cells: Array = segs[-1]["cells"]
+			if beam["stopped_at_target"] and not cells.is_empty() and cells[-1] == p:
+				touched = true
+		var t := _tex("shadow_crystal")
+		if t:
+			draw_texture_rect(t, Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(1, 0.4, 0.4) if touched else Color.WHITE)
+			continue
+		var shape := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r * 0.75, 0), c + Vector2(0, r), c + Vector2(-r * 0.75, 0)])
+		draw_colored_polygon(shape, Color("#0b0b14"))
+		var outline := shape.duplicate()
+		outline.append(shape[0])
+		draw_polyline(outline, Color("#ff4d6d") if touched else Color("#6c6c8a"), 3.0, true)
+		if touched:
+			draw_circle(c, r * (1.2 + 0.15 * sin(pulse * 12.0)), Color(1, 0.2, 0.3, 0.25))
 
 
 func _draw_beams() -> void:

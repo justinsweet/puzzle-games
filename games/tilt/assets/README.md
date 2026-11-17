@@ -10,6 +10,12 @@ Anything missing falls back to the built-in shapes.
 | `floor.png` | 256x256 | Floor tile (tileable) |
 | `wall.png` | 256x256 | Wall / block tile |
 | `pad_1.png` ... `pad_4.png` | 256x256, transparent | Teleport pads (linked pads share a number) |
-| `background_world1.png` ... `background_world3.png` | 1080x1920 | Background behind the board, per world |
+| `background_world1.png` ... `background_world8.png` | 1080x1920 | Background behind the board, per world |
+| `mud.png` | 256x256, transparent | Mud patch |
+| `arrow.png` | 256x256, transparent | One-way gate, drawn pointing UP (the game rotates it) |
+| `paint_r.png` ... `paint_p.png` | 256x256, transparent | Paint pads |
+| `button.png`, `button_down.png` | 256x256, transparent | Button up / pressed |
+| `gate_closed.png`, `gate_open.png` | 256x256 | Clockwork gates |
+| `wall_cracked.png` | 256x256 | Cracked wall (breaks after one bump) |
 | `menu_background.png` | 1080x1920 | Start screen background |
 | `mascot.png` | 512x512, transparent | Character on the start screen |

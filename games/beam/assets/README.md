@@ -10,6 +10,9 @@ Anything missing falls back to the built-in shapes.
 | `mirror.png` | 256x256, transparent | Fixed mirror drawn as "/" (the game rotates it for "\\") |
 | `mirror_mover.png` | 256x256, transparent | Draggable mirror drawn as "/" |
 | `crystal.png`, `crystal_lit.png` | 256x256, transparent, WHITE/GRAY | Crystal off and on. Draw them white or light gray: the game tints them to each crystal's color |
-| `background_world1.png` ... `background_world4.png` | 1080x1920 | Background per world |
+| `background_world1.png` ... `background_world9.png` | 1080x1920 | Background per world |
+| `prism.png` | 256x256, transparent | Prism |
+| `shadow_crystal.png` | 256x256, transparent | Shadow crystal (tinted red when touched) |
+| `gate_closed.png`, `gate_open.png` | 256x256 | Circuit gates |
 | `menu_background.png` | 1080x1920 | Start screen background |
 | `mascot.png` | 512x512, transparent | Character on the start screen |

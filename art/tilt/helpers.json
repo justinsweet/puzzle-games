@@ -243,6 +243,184 @@
       "helper": "Store & Promo",
       "match": "mascot",
       "prompt": "App icon: the mascot from the reference peeking over a glossy red marble on a wooden board, warm background, square, no text."
+    },
+    {
+      "name": "mud",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A round patch of wet, glossy brown mud set into the felt board, seen from directly above, slightly smaller than a tile."
+    },
+    {
+      "name": "arrow",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A one-way garden gate tile: a small wooden arch with a bold arrow pointing UP, seen from directly above."
+    },
+    {
+      "name": "paint_r",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A splash of glossy ruby red paint on the felt board, round and slightly splattered, seen from directly above."
+    },
+    {
+      "name": "paint_g",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "The same paint splash as the reference, recolored teal green.",
+      "match": "paint_r"
+    },
+    {
+      "name": "paint_b",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "The same paint splash as the reference, recolored sapphire blue.",
+      "match": "paint_r"
+    },
+    {
+      "name": "paint_y",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "The same paint splash as the reference, recolored amber yellow.",
+      "match": "paint_r"
+    },
+    {
+      "name": "paint_p",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "The same paint splash as the reference, recolored violet purple.",
+      "match": "paint_r"
+    },
+    {
+      "name": "button",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A round brass pressure button set into the board, raised, seen from directly above."
+    },
+    {
+      "name": "button_down",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "The same brass button as the reference, pressed down flush with the board and glowing softly.",
+      "match": "button"
+    },
+    {
+      "name": "gate_closed",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": false,
+      "helper": "Artist",
+      "match": "wall",
+      "prompt": "A closed wooden gate with brass bars filling a square tile, seen from directly above, edge to edge."
+    },
+    {
+      "name": "gate_open",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "The same gate as the reference, slid open: only a thin brass frame around the tile edge is visible.",
+      "match": "gate_closed"
+    },
+    {
+      "name": "wall_cracked",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": false,
+      "helper": "Artist",
+      "match": "wall",
+      "prompt": "The same wooden block as the reference, with visible cracks running across it, about to break, edge to edge."
+    },
+    {
+      "name": "background_world4",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A misty marsh with reeds, puddles and soft morning light, seen softly from above."
+    },
+    {
+      "name": "background_world5",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "An apple orchard with little wooden garden gates, seen softly from above."
+    },
+    {
+      "name": "background_world6",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A cozy red barn interior with paint cans and colorful splashes, soft and warm."
+    },
+    {
+      "name": "background_world7",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A sunny stone quarry with crumbling rock walls, soft and low contrast."
+    },
+    {
+      "name": "background_world8",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A warm clockwork mill with brass gears and wooden beams, soft focus."
     }
   ]
 }

@@ -148,6 +148,101 @@
       "helper": "Store & Promo",
       "match": "mascot",
       "prompt": "App icon: the mascot from the reference holding a bright beam of light that bounces off a mirror, dark blue background, square, no text."
+    },
+    {
+      "name": "prism",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A clear triangular glass prism seen from directly above, catching light in rainbow edges.",
+      "key_color": "pure black (#000000)"
+    },
+    {
+      "name": "shadow_crystal",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A faceted diamond-shaped crystal made of dark smoky obsidian, seen from directly above, dim and menacing.",
+      "key_color": "pure bright magenta (#FF00FF)"
+    },
+    {
+      "name": "gate_closed",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": false,
+      "helper": "Artist",
+      "match": "wall",
+      "prompt": "A closed sci-fi energy gate filling a square tile: metal frame with glowing amber bars, seen from directly above."
+    },
+    {
+      "name": "gate_open",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "The same gate frame as the reference with the bars retracted, only the frame visible.",
+      "match": "gate_closed",
+      "key_color": "pure bright magenta (#FF00FF)"
+    },
+    {
+      "name": "background_world5",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A night observatory with twin telescopes and stars."
+    },
+    {
+      "name": "background_world6",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A dark vault with obsidian crystals and faint light."
+    },
+    {
+      "name": "background_world7",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "The deep sea floor with bioluminescent glow and faint light rays."
+    },
+    {
+      "name": "background_world8",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "Snowy mountain peaks with rainbow light refracting through ice."
+    },
+    {
+      "name": "background_world9",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "An ancient temple with glowing circuit-like carvings and doors."
     }
   ]
 }

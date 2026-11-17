@@ -60,6 +60,25 @@ static func parse(level: Dictionary) -> Dictionary:
 	var movers := []
 	for m in level.get("movers", []):
 		movers.append({"pos": _cell(m), "m": m["m"]})
+	var links := {}   # cell -> its twin
+	for pair in level.get("links", []):
+		var a := Vector2i(int(pair[0][0]), int(pair[0][1]))
+		var b := Vector2i(int(pair[1][0]), int(pair[1][1]))
+		links[a] = b
+		links[b] = a
+	var shadows := {}
+	for p in level.get("shadows", []):
+		shadows[Vector2i(int(p[0]), int(p[1]))] = true
+	var prisms := {}
+	for p in level.get("prisms", []):
+		prisms[Vector2i(int(p[0]), int(p[1]))] = true
+	var gates := {}
+	for g in level.get("gates", []):
+		gates[_cell(g)] = str(g["id"])
+	var opens := {}
+	for t in level["targets"]:
+		if t.has("opens"):
+			opens[_cell(t)] = str(t["opens"])
 	var goal_fixed := {}
 	var goal_movers := []
 	if level.has("goal"):
@@ -80,6 +99,12 @@ static func parse(level: Dictionary) -> Dictionary:
 		"targets": targets,
 		"filters": filters,
 		"tints": tints,
+		"links": links,
+		"shadows": shadows,
+		"prisms": prisms,
+		"gates": gates,
+		"opens": opens,
+		"max_bounces": int(level.get("max_bounces", 0)),
 		"goal_fixed": goal_fixed,
 		"goal_movers": goal_movers,
 	}
@@ -97,10 +122,11 @@ static func mirror_map(fixed: Dictionary, movers: Array) -> Dictionary:
 	return all
 
 
-## Follows every beam. Returns {"lit": {pos: true}, "beams": [beam]} where a beam is
-## {"start": Vector2i, "segments": [{"color": int, "cells": [Vector2i]}], "end_dir": Vector2i, "stopped_at_target": bool}.
-## A new segment starts when the beam changes color or comes out of a portal.
-static func trace(lvl: Dictionary, mirrors: Dictionary) -> Dictionary:
+## One pass over every beam with the given gates open. Returns {"lit": {pos: true},
+## "shadow": bool, "beams": [beam]} where a beam is {"start", "segments": [{"color", "cells"}],
+## "end_dir", "stopped_at_target"}. A new segment starts when the color changes or the
+## beam comes out of a portal. Beams that a prism sends out are added to the list.
+static func trace_once(lvl: Dictionary, mirrors: Dictionary, opened: Dictionary) -> Dictionary:
 	var w: int = lvl["w"]
 	var h: int = lvl["h"]
 	var walls: Dictionary = lvl["walls"]
@@ -108,21 +134,36 @@ static func trace(lvl: Dictionary, mirrors: Dictionary) -> Dictionary:
 	var filters: Dictionary = lvl["filters"]
 	var tints: Dictionary = lvl["tints"]
 	var portals: Dictionary = lvl["portals"]
+	var shadows: Dictionary = lvl["shadows"]
+	var prisms: Dictionary = lvl["prisms"]
+	var gates: Dictionary = lvl["gates"]
+	var max_bounces: int = lvl["max_bounces"]
 	var blockers := {}
 	for e in lvl["emitters"]:
 		blockers[e["pos"]] = true
 	var lit := {}
+	var shadow := false
 	var beams := []
+	var queue := []
 	for e in lvl["emitters"]:
-		var p: Vector2i = e["pos"]
-		var d: Vector2i = e["dir"]
-		var c: int = e["color"]
+		queue.append([e["pos"], e["dir"], e["color"]])
+	var qi := 0
+	while qi < queue.size():
+		var item: Array = queue[qi]
+		qi += 1
+		var start: Vector2i = item[0]
+		var p: Vector2i = start
+		var d: Vector2i = item[1]
+		var c: int = item[2]
 		var segments := [{"color": c, "cells": [p]}]
 		var seen := {}
 		var at_target := false
+		var bounces := 0
 		while true:
 			var n := p + d
 			if n.x < 0 or n.y < 0 or n.x >= w or n.y >= h or walls.has(n) or blockers.has(n):
+				break
+			if gates.has(n) and not opened.has(gates[n]):
 				break
 			p = n
 			var key := "%d,%d,%d,%d,%d" % [p.x, p.y, d.x, d.y, c]
@@ -130,6 +171,10 @@ static func trace(lvl: Dictionary, mirrors: Dictionary) -> Dictionary:
 				break
 			seen[key] = true
 			segments[-1]["cells"].append(p)
+			if shadows.has(p):
+				shadow = true
+				at_target = true
+				break
 			if targets.has(p):
 				if targets[p] == c:
 					lit[p] = true
@@ -141,36 +186,94 @@ static func trace(lvl: Dictionary, mirrors: Dictionary) -> Dictionary:
 			if tints.has(p) and (c | tints[p]) != c:
 				c = c | tints[p]
 				segments.append({"color": c, "cells": [p]})
+			if prisms.has(p) and c == 7:
+				queue.append([p, Vector2i(d.y, -d.x), 1])   # red turns left
+				queue.append([p, d, 2])                     # yellow goes straight
+				queue.append([p, Vector2i(-d.y, d.x), 4])   # blue turns right
+				at_target = true
+				break
 			if portals.has(p):
 				p = portals[p]
 				segments.append({"color": c, "cells": [p]})
 			if mirrors.has(p):
+				if max_bounces > 0 and bounces >= max_bounces:
+					at_target = true  # the light fades at this mirror
+					break
 				d = reflect(d, mirrors[p])
-		beams.append({"start": e["pos"], "segments": segments, "end_dir": d, "stopped_at_target": at_target})
-	return {"lit": lit, "beams": beams}
+				bounces += 1
+		beams.append({"start": start, "segments": segments, "end_dir": d, "stopped_at_target": at_target})
+	return {"lit": lit, "shadow": shadow, "beams": beams}
+
+
+## Traces the board, opening gates for lit crystals until nothing changes (at most 8 passes).
+## Also returns "opened": the gate ids that are open.
+static func trace(lvl: Dictionary, mirrors: Dictionary) -> Dictionary:
+	var opened := {}
+	var result := {}
+	for i in 8:
+		result = trace_once(lvl, mirrors, opened)
+		var new_open := {}
+		for p in result["lit"]:
+			if lvl["opens"].has(p):
+				new_open[lvl["opens"][p]] = true
+		var same := new_open.size() == opened.size()
+		if same:
+			for k in new_open:
+				if not opened.has(k):
+					same = false
+		if same:
+			break
+		opened = new_open
+	result["opened"] = opened
+	return result
 
 
 static func is_solved(lvl: Dictionary, mirrors: Dictionary) -> bool:
-	return trace(lvl, mirrors)["lit"].size() == lvl["targets"].size()
+	var t := trace(lvl, mirrors)
+	return t["lit"].size() == lvl["targets"].size() and not t["shadow"]
 
 
-## Fewest flips of the fixed mirrors that solve the board with movers where they are.
-## Returns an Array of Vector2i to flip, or null if none works.
-static func solve_flips(lvl: Dictionary, fixed: Dictionary, movers: Array) -> Variant:
+static func flip(m: String) -> String:
+	return "\\" if m == "/" else "/"
+
+
+## Fixed mirrors grouped so twins flip together.
+static func flip_groups(lvl: Dictionary, fixed: Dictionary) -> Array:
+	var groups := []
+	var done := {}
 	var keys: Array = fixed.keys()
-	var n := keys.size()
+	keys.sort()
+	for k in keys:
+		if done.has(k):
+			continue
+		if lvl["links"].has(k):
+			var twin: Vector2i = lvl["links"][k]
+			groups.append([k, twin])
+			done[twin] = true
+		else:
+			groups.append([k])
+		done[k] = true
+	return groups
+
+
+## Fewest taps on fixed mirrors (a twin pair is one tap) that solve the board with movers
+## where they are. Returns an Array of Vector2i to tap, or null if none works.
+static func solve_flips(lvl: Dictionary, fixed: Dictionary, movers: Array) -> Variant:
+	var groups := flip_groups(lvl, fixed)
+	var n := groups.size()
 	var best = null
 	for mask in range(1 << n):
-		var setting := {}
 		var taps := []
 		for i in n:
-			var flip := ((mask >> i) & 1) == 1
-			var m: String = fixed[keys[i]]
-			setting[keys[i]] = (("\\" if m == "/" else "/") if flip else m)
-			if flip:
-				taps.append(keys[i])
+			if ((mask >> i) & 1) == 1:
+				taps.append(groups[i][0])
 		if best != null and taps.size() >= best.size():
 			continue
+		var setting := fixed.duplicate()
+		for i in n:
+			if ((mask >> i) & 1) == 1:
+				for cell in groups[i]:
+					setting[cell] = flip(setting[cell])
 		if is_solved(lvl, mirror_map(setting, movers)):
 			best = taps
 	return best

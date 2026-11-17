@@ -9,6 +9,12 @@ Level format (JSON):
   tints:    [{"x", "y", "color"}]                    colored glass: mixes its color into the beam
   movers:   [{"x", "y", "m": "/" or "\\"}]           mirrors the player can drag (and flip)
   goal:     {"mirrors": {"x,y": "/"}, "movers": [{"x", "y", "m"}]}   one solved setting (for hints)
+  links:    [[[x, y], [x, y]]]                   twin mirrors: tapping one flips both
+  shadows:  [[x, y]]                             shadow crystals: the level fails while any beam touches one
+  max_bounces: n                                 beams fade after n mirror bounces
+  prisms:   [[x, y]]                             split white light: red turns left, yellow goes straight, blue turns right
+  gates:    [{"x", "y", "id"}]                   closed until a crystal with "opens": id is lit
+  (targets may have "opens": id)
 
 Colors mix like paint: r + y = o (orange), y + b = g (green), r + b = p (purple), all three = w.
 
@@ -20,12 +26,19 @@ Rules (must match games/beam/scripts/beam_rules.gd exactly):
   * A filter stops every beam except its own color.
   * Colored glass mixes its color into the beam that passes through.
   * A portal pad sends the beam out of its linked pad, same direction.
+  * A shadow crystal stops a beam; while any beam touches one, the level is not solved.
+  * A prism stops a white beam and sends out red (turned left), yellow (straight) and blue
+    (turned right) beams from the prism. Colored beams pass through prisms unchanged.
+  * With max_bounces, a beam stops at the mirror that would be one bounce too many.
+  * Gates block beams until a crystal that opens them is lit. The board is traced again
+    with the gates that the lit crystals open, until nothing changes (at most 8 times).
   * Beams pass through each other. A beam that loops forever is stopped.
-  * The level is solved when every crystal is lit.
+  * The level is solved when every crystal is lit and no shadow crystal is touched.
 """
 import argparse
 import itertools
 import json
+import os
 import random
 
 DIRS = {"U": (0, -1), "D": (0, 1), "L": (-1, 0), "R": (1, 0)}
@@ -63,25 +76,40 @@ class Board:
         self.filters = {(f["x"], f["y"]): BITS[f["color"]] for f in level.get("filters", [])}
         self.tints = {(t["x"], t["y"]): BITS[t["color"]] for t in level.get("tints", [])}
         self.movers = [((m["x"], m["y"]), m["m"]) for m in level.get("movers", [])]
+        self.links = [[tuple(a), tuple(b)] for a, b in level.get("links", [])]
+        self.shadows = {tuple(p) for p in level.get("shadows", [])}
+        self.max_bounces = level.get("max_bounces", 0)
+        self.prisms = {tuple(p) for p in level.get("prisms", [])}
+        self.gates = {(g["x"], g["y"]): g["id"] for g in level.get("gates", [])}
+        self.opens = {(t["x"], t["y"]): t["opens"] for t in level["targets"] if "opens" in t}
 
-    def trace(self, mirrors):
-        """mirrors: dict (x, y) -> '/' or '\\' (fixed and movers together).
-        Returns (lit set, beams) where a beam is a list of (cell, color_bits) visited."""
-        lit, beams = set(), []
+    def trace_once(self, mirrors, opened):
+        """One pass. Returns (lit set, shadow_touched, beams) where a beam is a dict with
+        "path": [(cell, color_bits)], "bounces", "split" (ended in a prism)."""
+        lit, beams, shadow = set(), [], False
         blockers = {e[0] for e in self.emitters}
-        for (pos, d, color) in self.emitters:
+        queue = [(pos, d, color) for (pos, d, color) in self.emitters]
+        qi = 0
+        while qi < len(queue):
+            (pos, d, color) = queue[qi]
+            qi += 1
             x, y = pos
             c = color
-            seen, path = set(), []
+            seen, path, bounces, split = set(), [], 0, False
             while True:
                 nx, ny = x + d[0], y + d[1]
                 if nx < 0 or ny < 0 or nx >= self.w or ny >= self.h or (nx, ny) in self.walls or (nx, ny) in blockers:
+                    break
+                if (nx, ny) in self.gates and self.gates[(nx, ny)] not in opened:
                     break
                 x, y = nx, ny
                 if (x, y, d, c) in seen:
                     break
                 seen.add((x, y, d, c))
                 path.append(((x, y), c))
+                if (x, y) in self.shadows:
+                    shadow = True
+                    break
                 if (x, y) in self.targets:
                     if self.targets[(x, y)] == c:
                         lit.add((x, y))
@@ -90,16 +118,53 @@ class Board:
                     break
                 if (x, y) in self.tints:
                     c |= self.tints[(x, y)]
+                if (x, y) in self.prisms and c == 7:
+                    dx, dy = d
+                    queue.append(((x, y), (dy, -dx), 1))
+                    queue.append(((x, y), d, 2))
+                    queue.append(((x, y), (-dy, dx), 4))
+                    split = True
+                    break
                 if (x, y) in self.portals:
                     x, y = self.portals[(x, y)]
                     path.append(((x, y), c))
                 if (x, y) in mirrors:
+                    if self.max_bounces and bounces >= self.max_bounces:
+                        break
                     d = reflect(d, mirrors[(x, y)])
-            beams.append(path)
-        return lit, beams
+                    bounces += 1
+            beams.append({"path": path, "bounces": bounces, "split": split})
+        return lit, shadow, beams
+
+    def trace_full(self, mirrors):
+        opened = frozenset()
+        for _ in range(8):
+            lit, shadow, beams = self.trace_once(mirrors, opened)
+            new = frozenset(self.opens[p] for p in lit if p in self.opens)
+            if new == opened:
+                break
+            opened = new
+        return lit, shadow, beams
+
+    def trace(self, mirrors):
+        """Returns (lit set, beams) where a beam is a list of (cell, color_bits) visited."""
+        lit, shadow, beams = self.trace_full(mirrors)
+        return lit, [b["path"] for b in beams]
 
     def solved(self, mirrors):
-        return len(self.trace(mirrors)[0]) == len(self.targets)
+        lit, shadow, _ = self.trace_full(mirrors)
+        return len(lit) == len(self.targets) and not shadow
+
+    def flip_groups(self):
+        """Fixed mirrors grouped so twins flip together: list of lists of cells."""
+        grouped, groups = set(), []
+        for a, b in self.links:
+            groups.append([a, b])
+            grouped |= {a, b}
+        for k in sorted(self.fixed):
+            if k not in grouped:
+                groups.append([k])
+        return groups
 
     def setting(self, fixed, movers):
         s = dict(fixed)
@@ -108,16 +173,26 @@ class Board:
         return s
 
 
+def flip(m):
+    return "\\" if m == "/" else "/"
+
+
 def min_fixed_flips(board, movers):
-    """Fewest flips of fixed mirrors that solve the board with movers where they are."""
-    keys = sorted(board.fixed)
+    """Fewest taps on fixed mirrors (a twin pair is one tap) that solve the board with
+    movers where they are. Returns (taps, setting) where taps lists one cell per tap."""
+    groups = board.flip_groups()
     best = None
-    for combo in itertools.product("/\\", repeat=len(keys)):
-        fixed = dict(zip(keys, combo))
+    for mask in range(1 << len(groups)):
+        taps = [groups[i][0] for i in range(len(groups)) if (mask >> i) & 1]
+        if best is not None and len(taps) >= len(best[0]):
+            continue
+        fixed = dict(board.fixed)
+        for i in range(len(groups)):
+            if (mask >> i) & 1:
+                for cell in groups[i]:
+                    fixed[cell] = flip(fixed[cell])
         if board.solved(board.setting(fixed, movers)):
-            flips = [k for k in keys if fixed[k] != board.fixed[k]]
-            if best is None or len(flips) < len(best[0]):
-                best = (flips, fixed)
+            best = (taps, fixed)
     return best
 
 
@@ -224,6 +299,130 @@ def random_level(rng, spec):
     return None
 
 
+def random_level_v2(rng, spec):
+    """Levels for the newer worlds: twin mirrors, shadow crystals, bounce limits,
+    prisms and circuit gates (no movers). Returns (level, fixed_goal, []) or None."""
+    size = spec["size"]
+    w = h = size
+    for _ in range(200):
+        cells = [(x, y) for y in range(h) for x in range(w)]
+        rng.shuffle(cells)
+        walls = set(cells[: int(len(cells) * spec["walls"])])
+        free = [c for c in cells if c not in walls]
+        fixed_goal = {free.pop(): rng.choice("/\\") for _ in range(spec["mirrors"])}
+        n_beams = spec["beams"]
+        colors = (["w"] + rng.sample(PRIMARIES, n_beams - 1)) if spec.get("prisms") else rng.sample(PRIMARIES, n_beams)
+        emitters = [(free.pop(), rng.choice(list(DIRS.values())), BITS[c]) for c in colors]
+        special = set(fixed_goal) | {e[0] for e in emitters}
+        prisms, gates, targets, shadows = [], {}, {}, []
+
+        def level_dict(fixed, links=(), max_bounces=0, opens=None):
+            rows = ["".join("#" if (x, y) in walls else fixed.get((x, y), ".") for x in range(w)) for y in range(h)]
+            tl = []
+            for p_, c_ in targets.items():
+                t = {"x": p_[0], "y": p_[1], "color": NAMES[c_]}
+                if opens and p_ in opens:
+                    t["opens"] = opens[p_]
+                tl.append(t)
+            d = {"rows": rows,
+                 "emitters": [{"x": p_[0], "y": p_[1], "dir": INV_DIRS[d_], "color": NAMES[c_]} for p_, d_, c_ in emitters],
+                 "targets": tl, "filters": [], "tints": [], "movers": []}
+            if links:
+                d["links"] = [[list(a), list(b)] for a, b in links]
+            if shadows:
+                d["shadows"] = [list(p_) for p_ in shadows]
+            if max_bounces:
+                d["max_bounces"] = max_bounces
+            if prisms:
+                d["prisms"] = [list(p_) for p_ in prisms]
+            if gates:
+                d["gates"] = [{"x": p_[0], "y": p_[1], "id": i_} for p_, i_ in gates.items()]
+            return d
+
+        ok = True
+        if spec.get("prisms"):
+            b = Board(level_dict(fixed_goal))
+            white = b.trace_full(fixed_goal)[2][0]["path"]
+            options = [p_ for p_, _ in white[:-1] if p_ not in special]
+            if not options:
+                continue
+            pr = rng.choice(options)
+            prisms.append(pr)
+            special.add(pr)
+        # Crystals at the end of every beam that doesn't end in a prism.
+        b = Board(level_dict(fixed_goal))
+        lit, shadow, beams = b.trace_once(fixed_goal, frozenset())
+        leaves = [bm for bm in beams if not bm["split"]]
+        for bm in leaves:
+            path = bm["path"]
+            if not path or bm["bounces"] < spec["bounces"]:
+                ok = False
+                break
+            end, c = path[-1]
+            if end in special or end in targets:
+                ok = False
+                break
+            targets[end] = c
+            special.add(end)
+        if not ok:
+            continue
+        opens = {}
+        if spec.get("circuit"):
+            # A gate on beam #2's path that crystal #1 opens.
+            if len(leaves) < 2:
+                continue
+            path_b = leaves[1]["path"]
+            options = [p_ for p_, _ in path_b[1:-1] if p_ not in special]
+            if not options:
+                continue
+            g = rng.choice(options)
+            gates[g] = "1"
+            special.add(g)
+            opens[leaves[0]["path"][-1][0]] = "1"
+        max_b = max(bm["bounces"] for bm in leaves) if spec.get("deep") else 0
+        goal_level = level_dict(fixed_goal, max_bounces=max_b, opens=opens)
+        if not Board(goal_level).solved(fixed_goal):
+            continue
+        # Twin mirrors: pair up some fixed mirrors.
+        links = []
+        if spec.get("links"):
+            keys = list(fixed_goal)
+            rng.shuffle(keys)
+            for i in range(min(spec["links"], len(keys) // 2)):
+                links.append((keys[2 * i], keys[2 * i + 1]))
+        # Shadow crystals on cells that wrong settings light up, never on the goal paths.
+        if spec.get("shadows"):
+            goal_cells = {p_ for bm in Board(goal_level).trace_full(fixed_goal)[2] for p_, _ in bm["path"]}
+            touched = {}
+            for _ in range(12):
+                wrong = {k: rng.choice("/\\") for k in fixed_goal}
+                for bm in Board(goal_level).trace_full(wrong)[2]:
+                    for p_, _ in bm["path"]:
+                        if p_ not in goal_cells and p_ not in special and p_ not in walls:
+                            touched[p_] = touched.get(p_, 0) + 1
+            if len(touched) < spec["shadows"]:
+                continue
+            for p_ in sorted(touched, key=lambda q: -touched[q])[: spec["shadows"]]:
+                shadows.append(p_)
+                special.add(p_)
+        goal_level = level_dict(fixed_goal, links, max_b, opens)
+        if not Board(goal_level).solved(fixed_goal):
+            continue
+        # Scramble by tapping (a twin pair flips together).
+        start = dict(fixed_goal)
+        board = Board(goal_level)
+        for group in board.flip_groups():
+            if rng.random() < 0.5:
+                for cell in group:
+                    start[cell] = flip(start[cell])
+        level = level_dict(start, links, max_b, opens)
+        board = Board(level)
+        if board.solved(board.setting(board.fixed, [])):
+            continue
+        return level, fixed_goal, []
+    return None
+
+
 def score(level, fixed_goal, mover_goal):
     """Returns (par, goal) or None. Levels without movers get an exact par by brute force.
     With movers, par = moves to reach the generator's goal (an upper bound), and we
@@ -293,6 +492,36 @@ WORLDS = [
         S(7, 2, 4, .08, 2, 3, 6, movers=2), S(7, 2, 5, .08, 2, 3, 6, movers=1, portals=1, filters=1),
         S(7, 3, 5, .08, 2, 4, 7, movers=2, tints=1), S(7, 3, 6, .08, 2, 4, 8, movers=2, portals=1, tints=1),
     ]},
+    {"name": "Twin Observatory", "intro": "Twin mirrors are linked: flip one and its twin flips too.", "v2": True, "curve": [
+        S(5, 1, 3, .08, 1, 1, 2, links=1), S(5, 1, 4, .08, 2, 1, 2, links=1), S(6, 1, 5, .08, 2, 2, 3, links=2),
+        S(6, 2, 5, .08, 1, 2, 3, links=2), S(6, 2, 6, .08, 2, 2, 4, links=2), S(6, 2, 6, .10, 2, 3, 4, links=3),
+        S(7, 2, 7, .08, 2, 3, 5, links=3), S(7, 3, 7, .08, 1, 3, 5, links=3), S(7, 3, 8, .08, 2, 3, 6, links=3),
+        S(7, 3, 9, .08, 2, 4, 7, links=4),
+    ]},
+    {"name": "Shadow Vault", "intro": "Shadow crystals must stay dark. Don't let any beam touch them.", "v2": True, "curve": [
+        S(5, 1, 3, .08, 1, 1, 2, shadows=1), S(5, 1, 4, .08, 2, 1, 2, shadows=1), S(6, 1, 5, .08, 2, 2, 3, shadows=2),
+        S(6, 2, 5, .08, 1, 2, 3, shadows=2), S(6, 2, 6, .08, 2, 2, 4, shadows=2), S(6, 2, 6, .10, 2, 3, 4, shadows=3),
+        S(7, 2, 7, .08, 2, 3, 5, shadows=3, links=1), S(7, 3, 7, .08, 1, 3, 5, shadows=3), S(7, 3, 8, .08, 2, 3, 6, shadows=4),
+        S(7, 3, 9, .08, 2, 4, 7, shadows=4, links=2),
+    ]},
+    {"name": "Deep Sea", "intro": "Light fades in the deep: beams can only bounce so many times.", "v2": True, "curve": [
+        S(5, 1, 3, .08, 2, 1, 2, deep=True), S(5, 1, 4, .08, 2, 1, 3, deep=True), S(6, 1, 5, .08, 3, 2, 3, deep=True),
+        S(6, 2, 5, .08, 2, 2, 3, deep=True), S(6, 2, 6, .08, 2, 2, 4, deep=True), S(6, 2, 6, .10, 3, 3, 4, deep=True),
+        S(7, 2, 7, .08, 3, 3, 5, deep=True, shadows=1), S(7, 3, 7, .08, 2, 3, 5, deep=True), S(7, 3, 8, .08, 2, 3, 6, deep=True, links=1),
+        S(7, 3, 9, .08, 2, 4, 7, deep=True, shadows=2),
+    ]},
+    {"name": "Prism Peaks", "intro": "Prisms split white light: red turns left, yellow goes straight, blue turns right.", "v2": True, "curve": [
+        S(5, 1, 2, .06, 0, 1, 2, prisms=1), S(6, 1, 3, .06, 0, 1, 2, prisms=1), S(6, 1, 4, .06, 0, 2, 3, prisms=1),
+        S(6, 1, 5, .06, 1, 2, 3, prisms=1), S(7, 2, 5, .06, 0, 2, 4, prisms=1), S(7, 1, 6, .06, 1, 3, 4, prisms=1),
+        S(7, 2, 6, .06, 1, 3, 5, prisms=1, links=1), S(7, 2, 7, .06, 1, 3, 5, prisms=1, shadows=1), S(7, 2, 8, .06, 1, 3, 6, prisms=1),
+        S(7, 3, 8, .06, 1, 4, 7, prisms=1, links=1),
+    ]},
+    {"name": "Circuit Temple", "intro": "Light one crystal to open the gate for another beam.", "v2": True, "curve": [
+        S(5, 2, 3, .06, 0, 1, 2, circuit=True), S(6, 2, 4, .06, 1, 1, 3, circuit=True), S(6, 2, 5, .06, 1, 2, 3, circuit=True),
+        S(6, 2, 5, .08, 1, 2, 4, circuit=True), S(6, 2, 6, .08, 1, 3, 4, circuit=True), S(7, 3, 6, .06, 1, 3, 5, circuit=True),
+        S(7, 2, 7, .06, 2, 3, 5, circuit=True, links=1), S(7, 3, 7, .06, 1, 3, 5, circuit=True, shadows=1), S(7, 3, 8, .06, 1, 3, 6, circuit=True),
+        S(7, 3, 9, .06, 2, 4, 7, circuit=True, links=2),
+    ]},
 ]
 
 
@@ -301,16 +530,32 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=11)
     ap.add_argument("--tries", type=int, default=600)
+    ap.add_argument("--regenerate-all", action="store_true",
+                    help="also regenerate worlds that already exist in --out (changes existing levels!)")
     args = ap.parse_args()
+    existing = {}
+    if os.path.exists(args.out) and not args.regenerate_all:
+        for w in json.load(open(args.out))["worlds"]:
+            existing[w["name"]] = w
     rng = random.Random(args.seed)
     worlds_out, n = [], 0
-    for world in WORLDS:
+    for wi, world in enumerate(WORLDS):
+        if world["name"] in existing:
+            w = existing[world["name"]]
+            for lv in w["levels"]:
+                n += 1
+                lv["id"] = n
+            worlds_out.append(w)
+            print(f"{world['name']:16} kept {len(w['levels'])} existing levels")
+            continue
+        if world.get("v2"):
+            rng = random.Random(args.seed * 1000 + wi)
         levels = []
         for spec in world["curve"]:
             n += 1
             best = None
             for _ in range(args.tries):
-                made = random_level(rng, spec)
+                made = random_level_v2(rng, spec) if world.get("v2") else random_level(rng, spec)
                 if made is None:
                     continue
                 level, fixed_goal, mover_goal = made
@@ -326,8 +571,8 @@ def main():
                 raise SystemExit(f"Could not generate level {n} ({world['name']}); loosen its settings.")
             level, (par, goal), count = best
             levels.append({"id": n, **level, "par": par, "goal": goal})
-            extras = {k: spec[k] for k in ("filters", "tints", "movers", "portals") if k in spec}
-            print(f"{world['name']:13} level {n:2}: {spec['size']}x{spec['size']}, {spec['beams']} beam(s), "
+            extras = {k: spec[k] for k in ("filters", "tints", "movers", "portals", "links", "shadows", "deep", "prisms", "circuit") if k in spec}
+            print(f"{world['name']:16} level {n:2}: {spec['size']}x{spec['size']}, {spec['beams']} beam(s), "
                   f"{spec['mirrors']} mirrors {extras}, par {par}, {count} solution(s)")
         worlds_out.append({"name": world["name"], "intro": world["intro"], "levels": levels})
     with open(args.out, "w") as f:
