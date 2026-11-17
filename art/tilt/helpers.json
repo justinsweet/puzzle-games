@@ -1,0 +1,248 @@
+{
+  "game": "tilt",
+  "style": "glossy glass marbles on a warm wooden game board with felt inlays, soft studio lighting, gentle shadows, warm palette of cream, honey wood, sage and terracotta",
+  "style_options": "See the Art Guide doc for the other two style options; replace 'style' to switch.",
+  "key_color": "pure bright green (#00FF00)",
+  "helpers": {
+    "Artist": "You create game art for a mobile puzzle game called Tilt.\nEvery image: one single object, centered, filling about 80% of the frame, straight top-down\northographic view (looking straight down at a game board), clean game-asset style, crisp edges,\nno text, no letters, no numbers, no watermark, no border, lighting from the top-left.\nWhen asked for a set, keep every item identical except what the request changes.",
+    "Backgrounds": "You create background art for a mobile puzzle game called Tilt.\nPortrait 9:16 scene, soft focus and low contrast, gentle lighting, calm and uncluttered so a game\nboard drawn on top stays easy to read. No characters, no text, no letters, no watermark.",
+    "Character Studio": "You design the mascot for a mobile puzzle game called Tilt.\nFull body, front view, centered, friendly and expressive, appealing to adults and families,\nclean game-character style with crisp edges, no text, no watermark.\nCharacter: Pip, a small round pebble creature with stubby feet: smooth honey-colored stone body, big friendly eyes, a tiny moss tuft on top, rosy cheeks; cheerful and a little clumsy.",
+    "Store & Promo": "You create store and promo art for a mobile puzzle game called Tilt.\nBold, simple, instantly readable at small sizes, no small details, no text unless asked."
+  },
+  "assets": [
+    {
+      "name": "marble_r",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A single glossy glass marble, ruby red, seen from directly above, with a soft highlight at the top-left."
+    },
+    {
+      "name": "marble_g",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "marble_r",
+      "prompt": "The same marble as the reference, recolored teal green."
+    },
+    {
+      "name": "marble_b",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "marble_r",
+      "prompt": "The same marble as the reference, recolored sapphire blue."
+    },
+    {
+      "name": "marble_y",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "marble_r",
+      "prompt": "The same marble as the reference, recolored amber yellow."
+    },
+    {
+      "name": "marble_p",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "marble_r",
+      "prompt": "The same marble as the reference, recolored violet purple."
+    },
+    {
+      "name": "hole_r",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A round hole carved into a wooden game board with a ruby red rim, dark inside, seen from directly above, sized to hold one marble."
+    },
+    {
+      "name": "hole_g",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "hole_r",
+      "prompt": "The same hole as the reference, with a teal green rim."
+    },
+    {
+      "name": "hole_b",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "hole_r",
+      "prompt": "The same hole as the reference, with a sapphire blue rim."
+    },
+    {
+      "name": "hole_y",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "hole_r",
+      "prompt": "The same hole as the reference, with a amber yellow rim."
+    },
+    {
+      "name": "hole_p",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "hole_r",
+      "prompt": "The same hole as the reference, with a violet purple rim."
+    },
+    {
+      "name": "floor",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": false,
+      "helper": "Artist",
+      "prompt": "One square floor tile of the game board, seamless and tileable, subtle wood and felt texture, nothing on it, filling the whole frame edge to edge."
+    },
+    {
+      "name": "wall",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": false,
+      "helper": "Artist",
+      "match": "floor",
+      "prompt": "One square raised wooden block tile seen from directly above, slightly darker than the floor reference, filling the whole frame edge to edge."
+    },
+    {
+      "name": "pad_1",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "prompt": "A round glowing teleport pad set into the board, swirl pattern, violet glow, seen from directly above."
+    },
+    {
+      "name": "pad_2",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "pad_1",
+      "prompt": "The same teleport pad as the reference, with a gold glow."
+    },
+    {
+      "name": "pad_3",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "pad_1",
+      "prompt": "The same teleport pad as the reference, with a mint glow."
+    },
+    {
+      "name": "pad_4",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "pad_1",
+      "prompt": "The same teleport pad as the reference, with a coral glow."
+    },
+    {
+      "name": "background_world1",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A cozy sunny meadow with wildflowers, seen softly from above."
+    },
+    {
+      "name": "background_world2",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A calm pond with lily pads and reeds, seen softly from above."
+    },
+    {
+      "name": "background_world3",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A mysterious grove at dusk with softly glowing portal lights among the trees."
+    },
+    {
+      "name": "menu_background",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A welcoming meadow scene at golden hour with an empty open sky in the top third (space for the game title)."
+    },
+    {
+      "name": "mascot",
+      "size": [
+        512,
+        512
+      ],
+      "transparent": true,
+      "helper": "Character Studio",
+      "key_color": "pure bright magenta (#FF00FF)",
+      "prompt": "Idle pose, smiling, standing."
+    },
+    {
+      "name": "icon",
+      "size": [
+        1024,
+        1024
+      ],
+      "transparent": false,
+      "helper": "Store & Promo",
+      "match": "mascot",
+      "prompt": "App icon: the mascot from the reference peeking over a glossy red marble on a wooden board, warm background, square, no text."
+    }
+  ]
+}

@@ -39,3 +39,18 @@ python3 tools/levelgen/beam_levelgen.py --out games/beam/levels/levels.json
 ```
 
 Each generator only keeps levels its solver can beat, and records the fewest moves (par).
+
+## Making art with Grok
+
+The Grok helpers (style, standing instructions, full asset list) live in `art/<game>/helpers.json`.
+
+```bash
+pip3 install pillow
+echo 'XAI_API_KEY=your-key' > .env        # once; .env is never committed
+python3 tools/art/grok_art.py list     --game tilt
+python3 tools/art/grok_art.py generate --game tilt --asset marble_r --variations 3
+python3 tools/art/grok_art.py approve  --game tilt --asset marble_r --pick 2
+```
+
+`generate` saves candidates in `art/<game>/candidates/`. `approve` removes the background,
+resizes, and puts the file in `games/<game>/assets/`, where the game picks it up automatically.

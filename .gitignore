@@ -13,3 +13,9 @@ builds/
 .vscode/
 __pycache__/
 *.pyc
+
+# Secrets (xAI API key etc.)
+.env
+
+# Unapproved Grok candidates (approved originals are kept in art/<game>/originals)
+art/*/candidates/

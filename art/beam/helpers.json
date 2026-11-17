@@ -1,0 +1,153 @@
+{
+  "game": "beam",
+  "style": "dark navy laboratory, glowing neon light, polished chrome and glass, crystals with inner glow, clean sci-fi style, deep blues with vivid neon accents",
+  "style_options": "See the Art Guide doc for the other two style options; replace 'style' to switch.",
+  "key_color": "pure bright green (#00FF00)",
+  "helpers": {
+    "Artist": "You create game art for a mobile puzzle game called Beam.\nEvery image: one single object, centered, filling about 80% of the frame, straight top-down\northographic view (looking straight down at a game board), clean game-asset style, crisp edges,\nno text, no letters, no numbers, no watermark, no border, lighting from the top-left.\nWhen asked for a set, keep every item identical except what the request changes.",
+    "Backgrounds": "You create background art for a mobile puzzle game called Beam.\nPortrait 9:16 scene, soft focus and low contrast, gentle lighting, calm and uncluttered so a game\nboard drawn on top stays easy to read. No characters, no text, no letters, no watermark.",
+    "Character Studio": "You design the mascot for a mobile puzzle game called Beam.\nFull body, front view, centered, friendly and expressive, appealing to adults and families,\nclean game-character style with crisp edges, no text, no watermark.\nCharacter: Lumi, a little firefly-robot: rounded white-and-chrome body, glowing teal belly light, two antenna tips that glow, small translucent wings; curious and bright.",
+    "Store & Promo": "You create store and promo art for a mobile puzzle game called Beam.\nBold, simple, instantly readable at small sizes, no small details, no text unless asked."
+  },
+  "assets": [
+    {
+      "name": "mirror",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "key_color": "pure bright magenta (#FF00FF)",
+      "prompt": "A polished chrome mirror bar mounted diagonally from the bottom-left corner to the top-right corner, on a small round base, seen from directly above."
+    },
+    {
+      "name": "mirror_mover",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "mirror",
+      "key_color": "pure bright magenta (#FF00FF)",
+      "prompt": "The same mirror as the reference, but with a gold frame and small grip handles at both ends so it looks movable."
+    },
+    {
+      "name": "crystal",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "key_color": "pure black (#000000)",
+      "prompt": "A faceted diamond-shaped crystal, white and light gray only (no color at all), dim and unlit, seen from directly above."
+    },
+    {
+      "name": "crystal_lit",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": true,
+      "helper": "Artist",
+      "match": "crystal",
+      "key_color": "pure black (#000000)",
+      "prompt": "The same crystal as the reference, white only, glowing brightly from inside with a soft white halo."
+    },
+    {
+      "name": "floor",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": false,
+      "helper": "Artist",
+      "prompt": "One square dark lab floor tile, seamless and tileable, faint grid lines, nothing on it, filling the whole frame edge to edge."
+    },
+    {
+      "name": "wall",
+      "size": [
+        256,
+        256
+      ],
+      "transparent": false,
+      "helper": "Artist",
+      "match": "floor",
+      "prompt": "One square raised metal block tile seen from directly above, matching the floor reference, filling the whole frame edge to edge."
+    },
+    {
+      "name": "background_world1",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A quiet mirror laboratory with soft reflections."
+    },
+    {
+      "name": "background_world2",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A futuristic filter factory with colored glass panels in the distance."
+    },
+    {
+      "name": "background_world3",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A color studio full of prisms casting soft rainbows."
+    },
+    {
+      "name": "background_world4",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A warp gallery with swirling portals and floating frames."
+    },
+    {
+      "name": "menu_background",
+      "size": [
+        1080,
+        1920
+      ],
+      "transparent": false,
+      "helper": "Backgrounds",
+      "prompt": "A glowing lab scene with beams of light, empty dark space in the top third (space for the game title)."
+    },
+    {
+      "name": "mascot",
+      "size": [
+        512,
+        512
+      ],
+      "transparent": true,
+      "helper": "Character Studio",
+      "key_color": "pure bright magenta (#FF00FF)",
+      "prompt": "Idle pose, hovering, smiling."
+    },
+    {
+      "name": "icon",
+      "size": [
+        1024,
+        1024
+      ],
+      "transparent": false,
+      "helper": "Store & Promo",
+      "match": "mascot",
+      "prompt": "App icon: the mascot from the reference holding a bright beam of light that bounces off a mirror, dark blue background, square, no text."
+    }
+  ]
+}
