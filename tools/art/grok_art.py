@@ -171,7 +171,7 @@ def remove_background(img, tolerance=60):
         d = dist(c)
         if d < tolerance * 3:
             a = int(a * max(0.0, (d - tolerance) / (tolerance * 2)))
-        if strong and weak:
+        if strong and weak and d < tolerance * 4:  # only blended pixels, so real greens/magentas survive
             limit = max(c[k] for k in weak)
             for k in strong:
                 c[k] = min(c[k], limit)
