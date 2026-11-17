@@ -4,6 +4,7 @@ extends Node2D
 const Rules := preload("res://scripts/tilt_rules.gd")
 const LevelSelect := preload("res://addons/studio_core/level_select.gd")
 const Fx := preload("res://addons/studio_core/fx.gd")
+const MascotView := preload("res://addons/studio_core/mascot_view.gd")
 
 const LEVELS_PATH := "res://levels/levels.json"
 const SWIPE_MIN_PX := 40.0
@@ -52,6 +53,7 @@ var title_label: Label
 var status_label: Label
 var hint_button: Button
 var next_button: Button
+var mascot: Control
 
 
 func _ready() -> void:
@@ -112,6 +114,7 @@ func _start_level(index: int) -> void:
 	won = false
 	animating = false
 	_layout()
+	mascot.react("excited", 1.5)
 	var w: Dictionary = worlds[levels[level_index]["world"]]
 	if level_index == w["start"]:
 		_update_ui(w["name"] + ": " + w["intro"])
@@ -195,6 +198,7 @@ static func _pos_along(path: Array, s: float) -> Vector2:
 func _try_move(dir: String) -> void:
 	if animating or won or lvl.is_empty():
 		return
+	mascot.poke()
 	var r := Rules.slide(lvl["w"], lvl["h"], lvl["walls"], lvl["portals"], marbles, holes, dir)
 	var moved := false
 	anim_max_len = 0.0
@@ -229,6 +233,7 @@ func _on_move_finished() -> void:
 		var par: int = levels[level_index]["par"]
 		var stars := 3 if moves <= par else (2 if moves <= par + 3 else 1)
 		Progress.record_stars(level_index, stars)
+		mascot.react("cheering", 4.0)
 		_update_ui("Solved in %d moves (par %d)" % [moves, par], stars)
 		var colors := []
 		for k in MARBLE_COLORS:
@@ -266,6 +271,7 @@ func _on_hint() -> void:
 
 
 func _show_hint() -> void:
+	mascot.react("thinking", 3.0)
 	var path := Rules.solve(lvl["w"], lvl["h"], lvl["walls"], lvl["portals"], marbles, holes)
 	if path.is_empty():
 		_update_ui("No solution from here. Try Undo or Restart.")
@@ -398,8 +404,19 @@ func _build_ui() -> void:
 	game_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(game_ui)
 
-	title_label = _make_label(game_ui, 40, 40.0, 100.0)
+	title_label = _make_label(game_ui, 34, 40.0, 100.0)
 	status_label = _make_label(game_ui, 24, 105.0, 160.0)
+	mascot = MascotView.new()
+	mascot.load_poses("res://assets/")
+	mascot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	mascot.offset_left = -140.0
+	mascot.offset_right = -10.0
+	mascot.offset_top = 30.0
+	mascot.offset_bottom = 160.0
+	game_ui.add_child(mascot)
+	if mascot.visible:
+		title_label.offset_right = -150.0
+		status_label.offset_right = -150.0
 
 	var bar := HBoxContainer.new()
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
