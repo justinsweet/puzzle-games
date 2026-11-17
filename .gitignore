@@ -19,3 +19,6 @@ __pycache__/
 
 # Unapproved Grok candidates (approved originals are kept in art/<game>/originals)
 art/*/candidates/
+
+# Bot deliveries waiting for approval (approved art goes to art/<game>/originals and games/<game>/assets)
+art/*/incoming/

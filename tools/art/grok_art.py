@@ -108,17 +108,24 @@ def approved_original(game, name):
 # ------------------------------------------------------------------ image processing
 
 def remove_background(img, tolerance=60):
-    """Flood-fill the flat background from the edges and make it transparent."""
-    from PIL import Image
+    """Remove a flat key-color background (green or magenta) and clean the edge.
+
+    1. Flood-fill from the image edges: pixels close to the background color become transparent.
+    2. Edge pixels that are a blend of object and background become partly transparent.
+    3. Color spill (green or magenta tint) is removed from the remaining edge pixels.
+    4. The outline is trimmed by one pixel and softened slightly.
+    """
+    from PIL import Image, ImageFilter
     img = img.convert("RGBA")
     w, h = img.size
     px = img.load()
-    samples = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    bg = tuple(sum(s[i] for s in samples) // 4 for i in range(3))
+    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
+    bg = tuple(sum(c[i] for c in corners) // 4 for i in range(3))
 
-    def close(c):
-        return sum(abs(c[i] - bg[i]) for i in range(3)) <= tolerance
+    def dist(c):
+        return sum(abs(c[i] - bg[i]) for i in range(3))
 
+    removed = bytearray(w * h)
     seen = bytearray(w * h)
     stack = [(x, 0) for x in range(w)] + [(x, h - 1) for x in range(w)] + \
             [(0, y) for y in range(h)] + [(w - 1, y) for y in range(h)]
@@ -128,14 +135,50 @@ def remove_background(img, tolerance=60):
         if seen[i]:
             continue
         seen[i] = 1
-        if not close(px[x, y]):
+        if dist(px[x, y]) > tolerance:
             continue
+        removed[i] = 1
         px[x, y] = (0, 0, 0, 0)
         if x > 0: stack.append((x - 1, y))
         if x < w - 1: stack.append((x + 1, y))
         if y > 0: stack.append((x, y - 1))
         if y < h - 1: stack.append((x, y + 1))
-    # Soften the edge: pixels next to the removed area that are still close-ish get partial alpha.
+
+    # Which channels make up the key color? (green: G; magenta: R and B)
+    strong = [i for i in range(3) if bg[i] > 150]
+    weak = [i for i in range(3) if i not in strong]
+
+    # Pixels within 4 px of the removed area: fade blended ones and remove spill.
+    near = bytearray(w * h)
+    frontier = [i for i in range(w * h) if removed[i]]
+    for _ in range(4):
+        nxt = []
+        for i in frontier:
+            x, y = i % w, i // w
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < w and 0 <= ny < h:
+                    j = ny * w + nx
+                    if not removed[j] and not near[j]:
+                        near[j] = 1
+                        nxt.append(j)
+        frontier = nxt
+    for i in range(w * h):
+        if not near[i]:
+            continue
+        x, y = i % w, i // w
+        r, g, b, a = px[x, y]
+        c = [r, g, b]
+        d = dist(c)
+        if d < tolerance * 3:
+            a = int(a * max(0.0, (d - tolerance) / (tolerance * 2)))
+        if strong and weak:
+            limit = max(c[k] for k in weak)
+            for k in strong:
+                c[k] = min(c[k], limit)
+        px[x, y] = (c[0], c[1], c[2], a)
+
+    alpha = img.getchannel("A").filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(0.6))
+    img.putalpha(alpha)
     return img
 
 
